@@ -60,21 +60,54 @@ export async function createPineconeIndex() {
   }
 }
 
-export async function upsertDocument(fileId: string, content: string, metadata: any = {}) {
-  const chunks = splitIntoChunks(content);
-  const embeddings = await createEmbeddings(chunks);
-  const vectors = chunks.map((chunk, i) => ({
-    id: `${fileId}-${i}`,
-    values: embeddings[i],
-    metadata: {
-      ...metadata,
-      fileId,
-      chunk,
-    },
-  }));
+export async function upsertDocument(fileId: string, content: string) {
+  try {
+    console.log('\n=== Document Processing Details ===');
+    console.log('File ID:', fileId);
+    console.log('Content length:', content.length);
+    console.log('Content preview:', content.substring(0, 200) + '...');
 
-  const index = pinecone.index(process.env.PINECONE_INDEX_NAME!);
-  await index.upsert(vectors);
+    const index = pinecone.index(process.env.PINECONE_INDEX_NAME!);
+    
+    // Split the content into chunks
+    console.log('\nSplitting content into chunks...');
+    const docs = await textSplitter.createDocuments([content]);
+    console.log('Number of chunks created:', docs.length);
+    console.log('First chunk preview:', docs[0]?.pageContent.substring(0, 200) + '...');
+    
+    // Create embeddings for each chunk
+    console.log('\nCreating embeddings for chunks...');
+    const vectors = await Promise.all(
+      docs.map(async (doc: Document, i: number) => {
+        console.log(`Creating embedding for chunk ${i + 1}/${docs.length}`);
+        const embedding = await embeddings.embedQuery(doc.pageContent);
+        return {
+          id: `${fileId}-${i}`,
+          values: embedding,
+          metadata: {
+            text: doc.pageContent,
+            fileId,
+            chunkIndex: i,
+          },
+        };
+      })
+    );
+
+    console.log('\nUpserting vectors to Pinecone...');
+    // Upsert to Pinecone
+    await index.upsert(vectors);
+    console.log('Successfully upserted vectors to Pinecone');
+
+    console.log('\n=== Document Processing Summary ===');
+    console.log('Total chunks processed:', vectors.length);
+    console.log('Total vectors stored:', vectors.length);
+    console.log('Average chunk size:', Math.round(content.length / vectors.length));
+
+    return vectors.length;
+  } catch (error) {
+    console.error('Error upserting document to Pinecone:', error);
+    throw error;
+  }
 }
 
 export async function queryPinecone(query: string, fileId: string, topK: number = 5) {
@@ -172,16 +205,10 @@ export async function deleteDocument(fileId: string) {
 
     console.log(`Found ${vectorsToDelete.length} vectors to delete`);
 
-    // Delete vectors one at a time
-    for (const id of vectorsToDelete) {
-      try {
-        await index.deleteOne(id);
-        console.log(`Deleted vector with ID: ${id}`);
-      } catch (error) {
-        console.error(`Error deleting vector ${id}:`, error);
-        // Continue with other vectors even if one fails
-      }
-    }
+    // Delete vectors by ID
+    await index.deleteMany({
+      ids: vectorsToDelete,
+    });
 
     console.log('Successfully deleted vectors from Pinecone');
   } catch (error) {
