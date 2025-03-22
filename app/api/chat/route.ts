@@ -116,23 +116,21 @@ export async function POST(req: Request) {
     console.log('Prompt preview:', systemPrompt.substring(0, 200) + '...');
 
     // Get response from OpenAI
-    const completion = await openai.chat.completions.create({
+    const response = await openai.chat.completions.create({
       model: 'gpt-3.5-turbo',
       messages: [
         { role: 'system', content: systemPrompt },
-        { role: 'user', content: message },
+        { role: 'user', content: message }
       ],
       temperature: 0.7,
-      max_tokens: 500,
+      max_tokens: 1000,
     });
 
     console.log('\n=== OpenAI Response ===');
-    console.log('Response length:', completion.choices[0].message.content?.length);
-    console.log('Response preview:', completion.choices[0].message.content?.substring(0, 200) + '...');
+    console.log('Response length:', response.choices[0].message.content?.length);
+    console.log('Response preview:', response.choices[0].message.content?.substring(0, 200) + '...');
 
-    return NextResponse.json({
-      content: completion.choices[0].message.content,
-    });
+    return NextResponse.json({ response: response.choices[0].message.content });
   } catch (error) {
     console.error('Error in chat API:', error);
     return NextResponse.json(

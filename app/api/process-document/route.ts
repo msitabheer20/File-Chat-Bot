@@ -38,7 +38,7 @@ export async function POST(req: Request) {
   } catch (error) {
     console.error('Error processing document:', error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to process the document' },
+      { error: 'Failed to process document' },
       { status: 500 }
     );
   }

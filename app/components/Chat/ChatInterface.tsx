@@ -196,9 +196,8 @@ export default function ChatInterface() {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim() || isLoading) return;
+  const handleSubmit = async () => {
+    if (!input.trim() || isProcessing) return;
 
     const userMessage = input.trim();
     setInput('');
@@ -211,13 +210,9 @@ export default function ChatInterface() {
         timestamp: Date.now(),
       },
     ]);
-    setIsLoading(true);
 
     try {
-      console.log('Starting chat request...');
-      console.log('Files state:', files);
-      console.log('User message:', userMessage);
-
+      setIsLoading(true);
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: {
@@ -225,41 +220,31 @@ export default function ChatInterface() {
         },
         body: JSON.stringify({
           message: userMessage,
-          files: files.map(f => ({
-            id: f.id,
-            name: f.name,
-          })),
+          files: files.map(f => f.id),
         }),
       });
 
-      console.log('Response status:', response.status);
-      console.log('Response headers:', Object.fromEntries(response.headers.entries()));
-
       if (!response.ok) {
-        const errorData = await response.json().catch(() => null);
-        console.error('Error response data:', errorData);
-        throw new Error(errorData?.error || `HTTP error! status: ${response.status}`);
+        throw new Error('Failed to get response');
       }
 
       const data = await response.json();
-      console.log('Success response data:', data);
       setMessages(prev => [
         ...prev,
         {
           id: Date.now().toString(),
           role: 'assistant',
-          content: data.content,
+          content: data.response,
           timestamp: Date.now(),
         },
       ]);
     } catch (error) {
-      console.error('Full error details:', error);
       setMessages(prev => [
         ...prev,
         {
           id: Date.now().toString(),
           role: 'assistant',
-          content: `Error: ${error instanceof Error ? error.message : 'An error occurred while processing your request.'}`,
+          content: 'Sorry, I encountered an error. Please try again.',
           timestamp: Date.now(),
         },
       ]);
