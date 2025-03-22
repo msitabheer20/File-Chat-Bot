@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { FileData } from '@/types/chat';
-import { queryPinecone } from '@/utils/pinecone';
+import { queryPinecone, verifyDocumentStorage } from '@/utils/pinecone';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -28,6 +28,7 @@ function splitIntoChunks(text: string, maxChunkSize: number = 8000): string[] {
 
 export async function POST(req: Request) {
   try {
+    console.log('Received chat request');
     const { message, files } = await req.json();
 
     if (!message) {
@@ -37,54 +38,83 @@ export async function POST(req: Request) {
       );
     }
 
-    if (!files || files.length === 0) {
-      return NextResponse.json(
-        { error: 'Please upload at least one document before asking questions' },
-        { status: 400 }
-      );
-    }
+    let context = '';
+    let systemPrompt = '';
 
-    console.log('Processing chat request:', {
-      message,
-      numFiles: files.length,
-      fileIds: files.map(f => f.id)
-    });
+    if (files && files.length > 0) {
+      console.log('\n=== Processing Document-Based Chat ===');
+      console.log('Message:', message);
+      console.log('Number of files:', files.length);
+      console.log('File IDs:', files.map((f: FileData) => f.id));
 
-    // Get relevant chunks from Pinecone for each file
-    const relevantChunks = await Promise.all(
-      files.map(async (file: FileData) => {
-        try {
-          const chunks = await queryPinecone(message, file.id);
-          console.log(`Found ${chunks.length} relevant chunks for file ${file.name}`);
-          return chunks.join('\n\n');
-        } catch (error) {
-          console.error(`Error querying Pinecone for file ${file.name}:`, error);
-          return '';
+      // Verify document storage before querying
+      for (const file of files) {
+        if (!file.id) {
+          console.error(`File ${file.name} has no ID`);
+          continue;
         }
-      })
-    );
+        const vectorCount = await verifyDocumentStorage(file.id);
+        console.log(`Found ${vectorCount} vectors for file ${file.name}`);
+      }
 
-    // Filter out empty chunks and combine the rest
-    const context = relevantChunks.filter(chunk => chunk.trim()).join('\n\n');
-
-    if (!context.trim()) {
-      console.log('No relevant context found for the query');
-      return NextResponse.json(
-        { error: 'No relevant information found in the documents to answer your question. Try rephrasing your question or asking about a different topic.' },
-        { status: 400 }
+      // Get relevant chunks from Pinecone for each file
+      const relevantChunks = await Promise.all(
+        files.map(async (file: FileData) => {
+          try {
+            if (!file.id) {
+              console.error(`File ${file.name} has no ID`);
+              return '';
+            }
+            console.log(`\nQuerying Pinecone for file: ${file.name}`);
+            const chunks = await queryPinecone(message, file.id);
+            console.log(`Found ${chunks.length} relevant chunks for file ${file.name}`);
+            return chunks.join('\n\n');
+          } catch (error) {
+            console.error(`Error querying Pinecone for file ${file.name}:`, error);
+            return '';
+          }
+        })
       );
+
+      // Filter out empty chunks and combine the rest
+      context = relevantChunks.filter(chunk => chunk.trim()).join('\n\n');
+
+      console.log('\n=== Context Details ===');
+      console.log('Context length:', context.length);
+      console.log('Number of chunks:', relevantChunks.filter(chunk => chunk.trim()).length);
+      console.log('\nFull Context:');
+      console.log('------------------------');
+      console.log(context);
+      console.log('------------------------');
+
+      if (!context.trim()) {
+        console.log('\nNo relevant context found for the query');
+        // Instead of returning an error, provide a helpful response
+        systemPrompt = `You are a helpful AI assistant. The user has uploaded documents but their question doesn't match any specific content in those documents. 
+        Please respond in a helpful way, suggesting that they:
+        1. Try rephrasing their question
+        2. Ask about specific topics or sections they're interested in
+        3. Share what they're looking for, and you can help guide them to the right questions
+        
+        Be friendly and encouraging in your response.`;
+      } else {
+        systemPrompt = `You are a helpful AI assistant that answers questions based on the provided document context. 
+        Use the following context to answer the user's question. If the context doesn't contain enough information to answer the question, 
+        say so. Do not make up information that isn't in the context. Be specific and cite relevant parts of the context in your answer.
+
+        Context: ${context}`;
+      }
+    } else {
+      console.log('\n=== Processing Basic Chat ===');
+      console.log('Message:', message);
+      // Basic chat without documents
+      systemPrompt = `You are a helpful AI assistant. Provide clear, concise, and accurate answers to the user's questions. 
+      If you're not sure about something, say so. Be friendly and professional in your responses.`;
     }
 
-    console.log('Context length:', context.length);
-    console.log('Context preview:', context.substring(0, 200) + '...');
-
-    // Create the system prompt with context
-    const systemPrompt = `You are a helpful AI assistant that answers questions based on the provided document context. 
-    Use the following context to answer the user's question. If the context doesn't contain enough information to answer the question, 
-    say so. Do not make up information that isn't in the context. Be specific and cite relevant parts of the context in your answer.
-
-    Context:
-    ${context}`;
+    console.log('\n=== System Prompt ===');
+    console.log('Prompt length:', systemPrompt.length);
+    console.log('Prompt preview:', systemPrompt.substring(0, 200) + '...');
 
     // Get response from OpenAI
     const completion = await openai.chat.completions.create({
@@ -97,8 +127,12 @@ export async function POST(req: Request) {
       max_tokens: 500,
     });
 
+    console.log('\n=== OpenAI Response ===');
+    console.log('Response length:', completion.choices[0].message.content?.length);
+    console.log('Response preview:', completion.choices[0].message.content?.substring(0, 200) + '...');
+
     return NextResponse.json({
-      response: completion.choices[0].message.content,
+      content: completion.choices[0].message.content,
     });
   } catch (error) {
     console.error('Error in chat API:', error);

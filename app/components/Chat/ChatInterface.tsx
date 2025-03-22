@@ -170,67 +170,64 @@ export default function ChatInterface() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim()) return;
+    if (!input.trim() || isLoading) return;
 
-    const newMessage: Message = {
-      id: Math.random().toString(36).substring(7),
-      content: input,
-      role: 'user',
-      timestamp: new Date(),
-    };
-
-    setMessages((prev) => [...prev, newMessage]);
+    const userMessage = input.trim();
     setInput('');
+    setMessages(prev => [...prev, {
+      id: Math.random().toString(36).substring(7),
+      content: userMessage,
+      role: 'user',
+      timestamp: new Date()
+    }]);
     setIsLoading(true);
 
     try {
-      // Log the request payload
-      const requestPayload = {
-        message: input,
-        files: files.map(f => ({
-          id: f.id,
-          name: f.name,
-          type: f.type,
-          contentLength: f.content.length
-        }))
-      };
-      console.log('Sending request payload:', requestPayload);
+      console.log('Starting chat request...');
+      console.log('Files state:', files);
+      console.log('User message:', userMessage);
 
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Accept': 'application/json',
         },
-        body: JSON.stringify(requestPayload),
+        body: JSON.stringify({
+          message: userMessage,
+          files: files.length > 0 ? files.map(f => ({
+            id: f.id,
+            name: f.name,
+            content: f.content,
+            type: f.type
+          })) : []
+        }),
       });
 
-      const data = await response.json();
-      
+      console.log('Response status:', response.status);
+      console.log('Response headers:', Object.fromEntries(response.headers.entries()));
+
       if (!response.ok) {
-        throw new Error(data.error || `HTTP error! status: ${response.status}`);
+        const errorData = await response.json().catch(() => null);
+        console.error('Error response data:', errorData);
+        throw new Error(errorData?.error || `HTTP error! status: ${response.status}`);
       }
 
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: Math.random().toString(36).substring(7),
-          content: data.response,
-          role: 'assistant',
-          timestamp: new Date(),
-        },
-      ]);
-    } catch (error: any) {
-      console.error('Error details:', error);
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: Math.random().toString(36).substring(7),
-          content: `Error: ${error.message || 'Something went wrong'}`,
-          role: 'assistant',
-          timestamp: new Date(),
-        },
-      ]);
+      const data = await response.json();
+      console.log('Success response data:', data);
+      setMessages(prev => [...prev, {
+        id: Math.random().toString(36).substring(7),
+        content: data.content,
+        role: 'assistant',
+        timestamp: new Date()
+      }]);
+    } catch (error) {
+      console.error('Full error details:', error);
+      setMessages(prev => [...prev, {
+        id: Math.random().toString(36).substring(7),
+        content: `Error: ${error instanceof Error ? error.message : 'An error occurred while processing your request.'}`,
+        role: 'assistant',
+        timestamp: new Date()
+      }]);
     } finally {
       setIsLoading(false);
     }
