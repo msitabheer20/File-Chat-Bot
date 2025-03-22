@@ -153,10 +153,10 @@ export async function queryPinecone(query: string, fileId: string, topK: number 
       ?.filter(match => match.score && match.score > 0.3)
       .map((match: any) => match.metadata?.text) || [];
 
-    console.log('\n=== Final Results ===');
-    console.log('Number of chunks after filtering:', results.length);
-    console.log('Total text length:', results.reduce((acc, chunk) => acc + chunk.length, 0));
-    console.log('First chunk preview:', results[0]?.substring(0, 200) + '...');
+    // console.log('\n=== Final Results ===');
+    // console.log('Number of chunks after filtering:', results.length);
+    // console.log('Total text length:', results.reduce((acc, chunk) => acc + chunk.length, 0));
+    // console.log('First chunk preview:', results[0]?.substring(0, 200) + '...');
 
     if (results.length === 0) {
       console.log('\nNo relevant chunks found with score > 0.3');
@@ -178,14 +178,45 @@ export async function queryPinecone(query: string, fileId: string, topK: number 
 
 export async function deleteDocument(fileId: string) {
   try {
+    console.log('Starting document deletion process for fileId:', fileId);
     const index = pinecone.index(process.env.PINECONE_INDEX_NAME!);
-    
-    // Delete all vectors associated with the fileId
-    await index.deleteMany({
-      filter: {
-        fileId: { $eq: fileId },
-      },
+
+    // Get all vectors for this file
+    const queryResponse = await index.query({
+      vector: new Array(1536).fill(0), // Zero vector to get all matches
+      topK: 1000,
+      includeMetadata: true,
     });
+
+    if (!queryResponse.matches) {
+      console.log('No vectors found in index');
+      return;
+    }
+
+    // Filter vectors by fileId in memory
+    const vectorsToDelete = queryResponse.matches
+      .filter(match => match.metadata?.fileId === fileId)
+      .map(match => match.id);
+
+    if (vectorsToDelete.length === 0) {
+      console.log('No vectors found for fileId:', fileId);
+      return;
+    }
+
+    console.log(`Found ${vectorsToDelete.length} vectors to delete`);
+
+    // Delete vectors one at a time
+    for (const id of vectorsToDelete) {
+      try {
+        await index.deleteOne(id);
+        console.log(`Deleted vector with ID: ${id}`);
+      } catch (error) {
+        console.error(`Error deleting vector ${id}:`, error);
+        // Continue with other vectors even if one fails
+      }
+    }
+
+    console.log('Successfully deleted vectors from Pinecone');
   } catch (error) {
     console.error('Error deleting document from Pinecone:', error);
     throw error;

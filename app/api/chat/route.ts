@@ -28,7 +28,6 @@ function splitIntoChunks(text: string, maxChunkSize: number = 8000): string[] {
 
 export async function POST(req: Request) {
   try {
-    console.log('Received chat request');
     const { message, files } = await req.json();
 
     if (!message) {

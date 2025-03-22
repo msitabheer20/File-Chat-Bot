@@ -1,19 +1,19 @@
 export interface Message {
     id: string;
+    role: 'user' | 'assistant' | 'system';
     content: string;
-    role: 'user' | 'assistant';
-    timestamp: Date;
+    timestamp: number;
   }
   
   export interface FileData {
     id: string;
     name: string;
-    content: string;
     type: string;
+    size: number;
+    content?: string;
     metadata?: {
       pages?: number;
       info?: any;
       totalChunks?: number;
     };
-    chunks?: string[];
   }
