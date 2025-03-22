@@ -69,8 +69,9 @@ export default function FileUploadModal({
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
+      onClose();
     }
-  }, [selectedFiles, onFileUpload]);
+  }, [selectedFiles, onFileUpload, onClose]);
 
   const handleRemoveFile = useCallback((fileId: string) => {
     onFileRemove(fileId);
@@ -104,18 +105,18 @@ export default function FileUploadModal({
     <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-50">
       <div className="bg-white rounded-lg p-6 w-full max-w-2xl shadow-xl">
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-semibold">Upload Files</h2>
+          <h2 className="text-xl font-semibold text-gray-800">Upload Files</h2>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-gray-100 rounded-full"
+            className="p-2 hover:bg-gray-50 rounded-full text-gray-500 hover:text-gray-700 transition-colors"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
         <div
-          className={`border-2 border-dashed rounded-lg p-8 text-center ${
-            isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300'
+          className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
+            isDragging ? 'border-indigo-500 bg-indigo-50' : 'border-gray-300 hover:border-indigo-400'
           }`}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
@@ -129,7 +130,7 @@ export default function FileUploadModal({
             multiple
             accept=".pdf,.txt"
           />
-          <Upload className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+          <Upload className="h-12 w-12 mx-auto text-indigo-400 mb-4" />
           <p className="text-gray-600 mb-2">
             Drag and drop files here, or click to select files
           </p>
@@ -138,7 +139,7 @@ export default function FileUploadModal({
           </p>
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+            className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-sm"
           >
             Select Files
           </button>
@@ -152,14 +153,14 @@ export default function FileUploadModal({
             <div className="space-y-2">
               {hasSelectedFiles ? (
                 Array.from(selectedFiles!).map((file) => (
-                  <div key={file.name} className="flex items-center justify-between bg-gray-50 p-2 rounded">
+                  <div key={file.name} className="flex items-center justify-between bg-gray-50 p-2 rounded border border-gray-100">
                     <div className="flex items-center space-x-2">
-                      <FileIcon className="h-4 w-4 text-gray-500" />
+                      <FileIcon className="h-4 w-4 text-indigo-500" />
                       <span className="text-sm text-gray-700">{file.name}</span>
                     </div>
                     <button
                       onClick={() => handleRemoveSelectedFile(file.name)}
-                      className="p-1 hover:bg-gray-200 rounded-full transition-colors"
+                      className="p-1 hover:bg-gray-100 rounded-full transition-colors"
                       title="Remove file"
                     >
                       <Trash2 className="h-4 w-4 text-gray-500 hover:text-red-500" />
@@ -168,14 +169,14 @@ export default function FileUploadModal({
                 ))
               ) : (
                 files.map((file) => (
-                  <div key={file.id} className="flex items-center justify-between bg-gray-50 p-2 rounded">
+                  <div key={file.id} className="flex items-center justify-between bg-gray-50 p-2 rounded border border-gray-100">
                     <div className="flex items-center space-x-2">
-                      <FileIcon className="h-4 w-4 text-gray-500" />
+                      <FileIcon className="h-4 w-4 text-indigo-500" />
                       <span className="text-sm text-gray-700">{file.name}</span>
                     </div>
                     <button
                       onClick={() => handleRemoveFile(file.id)}
-                      className="p-1 hover:bg-gray-200 rounded-full transition-colors"
+                      className="p-1 hover:bg-gray-100 rounded-full transition-colors"
                       title="Remove file"
                     >
                       <Trash2 className="h-4 w-4 text-gray-500 hover:text-red-500" />
@@ -188,7 +189,7 @@ export default function FileUploadModal({
               <div className="mt-4 flex justify-end">
                 <button
                   onClick={handleUpload}
-                  className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+                  className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-sm"
                 >
                   Upload Files
                 </button>

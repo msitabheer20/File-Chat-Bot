@@ -344,7 +344,7 @@ export default function ChatInterface() {
   }, []);
 
   return (
-    <div className="flex flex-col h-screen max-w-4xl mx-auto p-4">
+    <div className="flex flex-col h-[80vh] max-w-4xl mx-auto p-4 bg-gradient-to-b from-gray-50 to-white">
       <Script
         src="//cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"
         onLoad={() => {
@@ -352,53 +352,13 @@ export default function ChatInterface() {
           setIsPdfLibLoaded(true);
         }}
       />
-      <div className="mb-4">
-        <h1 className="text-2xl font-bold mb-4">Document Analysis Chatbot</h1>
-        <div className="space-y-2">
-          <input
-            type="file"
-            multiple
-            accept=".pdf,.txt,.json,.csv,.md,.js,.ts,.html,.css,.xml,.yaml"
-            onChange={(e) => handleFileUpload(e.target.files)}
-            className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-          />
-          {isProcessing && (
-            <div className="text-sm text-blue-600">
-              {processingStatus}
-            </div>
-          )}
-          {files.length > 0 && (
-            <div className="p-4 border-b">
-              <h3 className="text-sm font-medium text-gray-700 mb-2">Uploaded Files:</h3>
-              <div className="space-y-2">
-                {files.map((file) => (
-                  <div key={file.id} className="flex items-center justify-between bg-gray-50 p-2 rounded">
-                    <div className="flex items-center space-x-2">
-                      <FileIcon className="h-4 w-4 text-gray-500" />
-                      <span className="text-sm text-gray-700">{file.name}</span>
-                    </div>
-                    <button
-                      onClick={() => handleRemoveFile(file.id)}
-                      className="p-1 hover:bg-gray-200 rounded-full transition-colors"
-                      title="Remove file"
-                    >
-                      <Trash2 className="h-4 w-4 text-gray-500 hover:text-red-500" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
       <div 
         ref={chatContainerRef}
-        className="flex-1 overflow-y-auto mb-4 space-y-4 p-4 border rounded-lg"
+        className="flex-1 overflow-y-auto space-y-4 p-4 border border-gray-200 rounded-lg mb-4 bg-white shadow-sm"
       >
         {messages.length === 0 && (
           <div className="text-center text-gray-500">
-            Upload a document and ask questions about its content.
+            Click the plus icon to upload a document and ask questions about its content.
           </div>
         )}
         {messages.map((message) => (
@@ -409,10 +369,10 @@ export default function ChatInterface() {
             }`}
           >
             <div
-              className={`max-w-[80%] rounded-lg p-3 ${
+              className={`max-w-[80%] rounded-lg p-3 shadow-sm ${
                 message.role === 'user'
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-gray-100 text-gray-800'
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-gray-50 text-gray-800 border border-gray-100'
               }`}
             >
               <p className="whitespace-pre-wrap">{message.content}</p>
@@ -424,35 +384,35 @@ export default function ChatInterface() {
         ))}
         {isLoading && (
           <div className="flex justify-start">
-            <div className="bg-gray-200 text-gray-800 rounded-lg p-3">
-              Analyzing documents...
+            <div className="bg-gray-50 text-gray-800 rounded-lg p-3 border border-gray-100 shadow-sm">
+              Thinking...
             </div>
           </div>
         )}
       </div>
 
-      <div className="border-t p-4">
+      <div className="border-t border-gray-200 p-4 bg-white shadow-sm rounded-lg">
         <form onSubmit={handleSubmit} className="flex items-center space-x-2">
           <button
             type="button"
             onClick={() => setIsUploadModalOpen(true)}
-            className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+            className="p-2 hover:bg-indigo-50 rounded-full transition-colors text-indigo-600"
             title="Upload files"
           >
-            <Plus className="h-5 w-5 text-gray-500" />
+            <Plus className="h-5 w-5" />
           </button>
           <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Type your message..."
-            className="flex-1 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="flex-1 p-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
             disabled={isProcessing}
           />
           <button
             type="submit"
             disabled={isProcessing || !input.trim()}
-            className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
           >
             Send
           </button>
