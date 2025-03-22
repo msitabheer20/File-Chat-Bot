@@ -205,10 +205,16 @@ export async function deleteDocument(fileId: string) {
 
     console.log(`Found ${vectorsToDelete.length} vectors to delete`);
 
-    // Delete vectors by ID
-    await index.deleteMany({
-      ids: vectorsToDelete,
-    });
+    // Delete vectors one at a time
+    for (const id of vectorsToDelete) {
+      try {
+        await index.deleteOne(id);
+        console.log(`Deleted vector with ID: ${id}`);
+      } catch (error) {
+        console.error(`Error deleting vector ${id}:`, error);
+        // Continue with other vectors even if one fails
+      }
+    }
 
     console.log('Successfully deleted vectors from Pinecone');
   } catch (error) {

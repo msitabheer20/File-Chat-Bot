@@ -196,8 +196,9 @@ export default function ChatInterface() {
     }
   };
 
-  const handleSubmit = async () => {
-    if (!input.trim() || isProcessing) return;
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!input.trim() || isLoading) return;
 
     const userMessage = input.trim();
     setInput('');
@@ -210,9 +211,13 @@ export default function ChatInterface() {
         timestamp: Date.now(),
       },
     ]);
+    setIsLoading(true);
 
     try {
-      setIsLoading(true);
+      console.log('Starting chat request...');
+      console.log('Files state:', files);
+      console.log('User message:', userMessage);
+
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: {
@@ -220,31 +225,41 @@ export default function ChatInterface() {
         },
         body: JSON.stringify({
           message: userMessage,
-          files: files.map(f => f.id),
+          files: files.map(f => ({
+            id: f.id,
+            name: f.name,
+          })),
         }),
       });
 
+      console.log('Response status:', response.status);
+      console.log('Response headers:', Object.fromEntries(response.headers.entries()));
+
       if (!response.ok) {
-        throw new Error('Failed to get response');
+        const errorData = await response.json().catch(() => null);
+        console.error('Error response data:', errorData);
+        throw new Error(errorData?.error || `HTTP error! status: ${response.status}`);
       }
 
       const data = await response.json();
+      console.log('Success response data:', data);
       setMessages(prev => [
         ...prev,
         {
           id: Date.now().toString(),
           role: 'assistant',
-          content: data.response,
+          content: data.content,
           timestamp: Date.now(),
         },
       ]);
     } catch (error) {
+      console.error('Full error details:', error);
       setMessages(prev => [
         ...prev,
         {
           id: Date.now().toString(),
           role: 'assistant',
-          content: 'Sorry, I encountered an error. Please try again.',
+          content: `Error: ${error instanceof Error ? error.message : 'An error occurred while processing your request.'}`,
           timestamp: Date.now(),
         },
       ]);
@@ -337,6 +352,45 @@ export default function ChatInterface() {
           setIsPdfLibLoaded(true);
         }}
       />
+      <div className="mb-4">
+        <h1 className="text-2xl font-bold mb-4">Document Analysis Chatbot</h1>
+        <div className="space-y-2">
+          <input
+            type="file"
+            multiple
+            accept=".pdf,.txt,.json,.csv,.md,.js,.ts,.html,.css,.xml,.yaml"
+            onChange={(e) => handleFileUpload(e.target.files)}
+            className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+          />
+          {isProcessing && (
+            <div className="text-sm text-blue-600">
+              {processingStatus}
+            </div>
+          )}
+          {files.length > 0 && (
+            <div className="p-4 border-b">
+              <h3 className="text-sm font-medium text-gray-700 mb-2">Uploaded Files:</h3>
+              <div className="space-y-2">
+                {files.map((file) => (
+                  <div key={file.id} className="flex items-center justify-between bg-gray-50 p-2 rounded">
+                    <div className="flex items-center space-x-2">
+                      <FileIcon className="h-4 w-4 text-gray-500" />
+                      <span className="text-sm text-gray-700">{file.name}</span>
+                    </div>
+                    <button
+                      onClick={() => handleRemoveFile(file.id)}
+                      className="p-1 hover:bg-gray-200 rounded-full transition-colors"
+                      title="Remove file"
+                    >
+                      <Trash2 className="h-4 w-4 text-gray-500 hover:text-red-500" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
 
       <div 
         ref={chatContainerRef}
@@ -344,7 +398,7 @@ export default function ChatInterface() {
       >
         {messages.length === 0 && (
           <div className="text-center text-gray-500">
-            Click the plus icon to upload a document and ask questions about its content.
+            Upload a document and ask questions about its content.
           </div>
         )}
         {messages.map((message) => (
