@@ -344,7 +344,7 @@ export default function ChatInterface() {
   }, []);
 
   return (
-    <div className="flex flex-col h-[80vh] max-w-4xl mx-auto p-4 bg-gradient-to-b from-gray-50 to-white">
+    <div className="flex flex-col h-[80vh] max-w-4xl mx-auto p-4 bg-white rounded-lg shadow-lg">
       <Script
         src="//cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"
         onLoad={() => {
@@ -354,10 +354,10 @@ export default function ChatInterface() {
       />
       <div 
         ref={chatContainerRef}
-        className="flex-1 overflow-y-auto space-y-4 p-4 border border-gray-200 rounded-lg mb-4 bg-white shadow-sm"
+        className="flex-1 overflow-y-auto space-y-4 p-4 border border-gray-300 rounded-lg mb-4 bg-gray-50 shadow-sm"
       >
         {messages.length === 0 && (
-          <div className="text-center text-gray-500">
+          <div className="text-center text-gray-600">
             Click the plus icon to upload a document and ask questions about its content.
           </div>
         )}
@@ -372,7 +372,7 @@ export default function ChatInterface() {
               className={`max-w-[80%] rounded-lg p-3 shadow-sm ${
                 message.role === 'user'
                   ? 'bg-indigo-600 text-white'
-                  : 'bg-gray-50 text-gray-800 border border-gray-100'
+                  : 'bg-white text-gray-800 border border-gray-200'
               }`}
             >
               <p className="whitespace-pre-wrap">{message.content}</p>
@@ -384,7 +384,7 @@ export default function ChatInterface() {
         ))}
         {isLoading && (
           <div className="flex justify-start">
-            <div className="bg-gray-50 text-gray-800 rounded-lg p-3 border border-gray-100 shadow-sm">
+            <div className="bg-white text-gray-800 rounded-lg p-3 border border-gray-200 shadow-sm">
               Thinking...
             </div>
           </div>
@@ -406,7 +406,7 @@ export default function ChatInterface() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Type your message..."
-            className="flex-1 p-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            className="flex-1 p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent placeholder:text-gray-500 bg-white text-gray-900"
             disabled={isProcessing}
           />
           <button
