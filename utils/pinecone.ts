@@ -2,6 +2,7 @@ import { Pinecone } from '@pinecone-database/pinecone';
 import { OpenAIEmbeddings } from '@langchain/openai';
 import { Document } from '@langchain/core/documents';
 import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter';
+import OpenAI from 'openai';
 
 if (!process.env.PINECONE_API_KEY) {
   throw new Error('Missing PINECONE_API_KEY environment variable');
@@ -19,6 +20,10 @@ const pinecone = new Pinecone({
 
 const embeddings = new OpenAIEmbeddings({
   openAIApiKey: process.env.OPENAI_API_KEY,
+});
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
 });
 
 const textSplitter = new RecursiveCharacterTextSplitter({
@@ -72,11 +77,11 @@ export async function upsertDocument(fileId: string, content: string) {
     // Split the content into chunks
     console.log('\nSplitting content into chunks...');
     const docs = await textSplitter.createDocuments([content]);
-    console.log('Number of chunks created:', docs.length);
-    console.log('First chunk preview:', docs[0]?.pageContent.substring(0, 200) + '...');
+    // console.log('Number of chunks created:', docs.length);
+    // console.log('First chunk preview:', docs[0]?.pageContent.substring(0, 200) + '...');
     
     // Create embeddings for each chunk
-    console.log('\nCreating embeddings for chunks...');
+    // console.log('\nCreating embeddings for chunks...');
     const vectors = await Promise.all(
       docs.map(async (doc: Document, i: number) => {
         console.log(`Creating embedding for chunk ${i + 1}/${docs.length}`);
@@ -110,6 +115,98 @@ export async function upsertDocument(fileId: string, content: string) {
   }
 }
 
+// Function to rerank chunks using OpenAI
+async function rerankChunks(query: string, chunks: string[], topK: number = 5) {
+  try {
+    console.log('\n=== Reranking Chunks ===');
+    console.log('Query:', query);
+    console.log('Number of chunks to rerank:', chunks.length);
+
+    // Create pairs of query and chunks for scoring
+    const pairs = chunks.map(chunk => ({
+      query,
+      chunk,
+    }));
+
+    console.log('\nStarting scoring process for each chunk...');
+    // Score each pair using OpenAI
+    const scores = await Promise.all(
+      pairs.map(async ({ query, chunk }, index) => {
+        console.log(`\nScoring chunk ${index + 1}/${chunks.length}`);
+        console.log('Chunk content:', chunk);
+        
+        const completion = await openai.chat.completions.create({
+          model: 'gpt-3.5-turbo',
+          messages: [
+            {
+              role: 'system',
+              content: `You are a relevance scorer. Your task is to score how well the given chunk answers the query on a scale of 0 to 1.
+              Scoring criteria:
+              1.0 = Perfect match, directly answers the query
+              0.7-0.9 = Very relevant, contains most of the answer
+              0.4-0.6 = Moderately relevant, contains some useful information
+              0.1-0.3 = Slightly relevant, contains minimal useful information
+              0.0 = Not relevant at all
+              
+              IMPORTANT: Respond with ONLY a number between 0 and 1, with up to 2 decimal places. Do not include any other text or explanation.`
+            },
+            {
+              role: 'user',
+              content: `Query: ${query}\n\nChunk: ${chunk}\n\nScore:`
+            }
+          ],
+          temperature: 0,
+          max_tokens: 4,
+        });
+
+        const response = completion.choices[0].message.content?.trim() || '0';
+        console.log('Raw OpenAI response:', response);
+        
+        // Parse and validate the score
+        let score = parseFloat(response);
+        if (isNaN(score) || score < 0 || score > 1) {
+          console.log('Invalid score received, defaulting to 0');
+          score = 0;
+        }
+        
+        console.log(`Score assigned: ${score}`);
+        console.log('Score interpretation:', 
+          score === 1 ? 'Perfect match' :
+          score >= 0.7 ? 'Very relevant' :
+          score >= 0.4 ? 'Moderately relevant' :
+          score >= 0.1 ? 'Slightly relevant' :
+          'Not relevant'
+        );
+        
+        return { chunk, score };
+      })
+    );
+
+    console.log('\n=== Scoring Summary ===');
+    console.log('All chunks scored. Sorting by relevance...');
+    
+    // Sort chunks by score and take top K
+    const rerankedChunks = scores
+      .sort((a, b) => b.score - a.score)
+      .slice(0, topK)
+      .map(item => item.chunk);
+
+    console.log('\n=== Final Reranking Results ===');
+    console.log(`Selected top ${topK} chunks after reranking`);
+    rerankedChunks.forEach((chunk, index) => {
+      const score = scores.find(s => s.chunk === chunk)?.score;
+      console.log(`\nChunk ${index + 1} (Score: ${score})`);
+      console.log('Content:', chunk);
+    });
+
+    return rerankedChunks;
+  } catch (error) {
+    console.error('Error during reranking:', error);
+    // If reranking fails, return original chunks
+    return chunks.slice(0, topK);
+  }
+}
+
 export async function queryPinecone(query: string, fileId: string, topK: number = 5) {
   try {
     console.log('=== Pinecone Query Details ===');
@@ -123,10 +220,10 @@ export async function queryPinecone(query: string, fileId: string, topK: number 
     const queryEmbedding = await embeddings.embedQuery(query);
     console.log('Query embedding created, dimension:', queryEmbedding.length);
     
-    // Query Pinecone
+    // Query Pinecone with a larger topK to get more candidates for reranking
     const queryResponse = await index.query({
       vector: queryEmbedding,
-      topK,
+      topK: Math.max(topK * 2, 10), // Get more candidates for reranking
       filter: {
         fileId: { $eq: fileId },
       },
@@ -148,28 +245,28 @@ export async function queryPinecone(query: string, fileId: string, topK: number 
       console.log('No matches found in Pinecone');
     }
 
-    // Extract and return the matched documents, filtering by score after getting results
-    const results = queryResponse.matches
+    // Extract the matched documents
+    const chunks = queryResponse.matches
       ?.filter(match => match.score && match.score > 0.3)
       .map((match: any) => match.metadata?.text) || [];
 
-    // console.log('\n=== Final Results ===');
-    // console.log('Number of chunks after filtering:', results.length);
-    // console.log('Total text length:', results.reduce((acc, chunk) => acc + chunk.length, 0));
-    // console.log('First chunk preview:', results[0]?.substring(0, 200) + '...');
-
-    if (results.length === 0) {
+    if (chunks.length === 0) {
       console.log('\nNo relevant chunks found with score > 0.3');
       // Try a more lenient search without score filtering
-      const lenientResults = queryResponse.matches?.map((match: any) => match.metadata?.text) || [];
+      const lenientChunks = queryResponse.matches?.map((match: any) => match.metadata?.text) || [];
       console.log('All chunks found (without score filtering):', {
-        numChunks: lenientResults.length,
-        totalLength: lenientResults.reduce((acc, chunk) => acc + chunk.length, 0)
+        numChunks: lenientChunks.length,
+        totalLength: lenientChunks.reduce((acc, chunk) => acc + chunk.length, 0)
       });
-      return lenientResults;
+      return lenientChunks;
     }
 
-    return results;
+    // Rerank the chunks
+    console.log('\nStarting reranking process...');
+    const rerankedChunks = await rerankChunks(query, chunks, topK);
+    console.log('Reranking complete. Returning top chunks.');
+
+    return rerankedChunks;
   } catch (error) {
     console.error('Error querying Pinecone:', error);
     throw error;
