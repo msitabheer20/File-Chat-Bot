@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
-import { upsertDocument } from '@/utils/pinecone';
-import { pinecone } from '@/utils/pinecone';
+import { upsertDocument, pinecone } from '@/utils/pinecone';
 
 export async function POST(req: Request) {
   try {
@@ -18,14 +17,13 @@ export async function POST(req: Request) {
     console.log('Document details:', {
       fileId,
       contentLength: content.length,
-      contentPreview: content.substring(0, 200) + '...'
+      contentPreview: content.substring(0, 200) + '...',
+      contentType: typeof content,
+      isContentEmpty: !content.trim()
     });
 
     // Process and store the document in Pinecone
     console.log('\nStarting document processing...');
-    console.log('Content type:', typeof content);
-    console.log('Content is empty:', !content.trim());
-    
     const numChunks = await upsertDocument(fileId, content);
 
     console.log('\n=== Document Processing Complete ===');
@@ -54,13 +52,18 @@ export async function POST(req: Request) {
       matchesFound: queryResponse.matches?.length || 0,
       firstMatch: queryResponse.matches?.[0] ? {
         score: queryResponse.matches[0].score,
-        textLength: queryResponse.matches[0].metadata?.text?.length || 0
+        textLength: queryResponse.matches[0].metadata?.text?.length || 0,
+        textPreview: queryResponse.matches[0].metadata?.text?.substring(0, 100) + '...'
       } : null
     });
 
     return NextResponse.json({
       success: true,
       message: `Document processed and stored in ${numChunks} chunks`,
+      verification: {
+        totalVectors: stats.totalVectorCount,
+        matchesFound: queryResponse.matches?.length || 0
+      }
     });
   } catch (error) {
     console.error('Error processing document:', error);

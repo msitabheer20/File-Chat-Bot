@@ -79,22 +79,24 @@ export async function upsertDocument(fileId: string, content: string) {
     // Split the content into chunks
     console.log('\nSplitting content into chunks...');
     const docs = await textSplitter.createDocuments([content]);
-    // console.log('Number of chunks created:', docs.length);
-    // console.log('First chunk preview:', docs[0]?.pageContent.substring(0, 200) + '...');
+    console.log('Number of chunks created:', docs.length);
     
     // Create embeddings for each chunk
-    // console.log('\nCreating embeddings for chunks...');
+    console.log('\nCreating embeddings for chunks...');
     const vectors = await Promise.all(
       docs.map(async (doc: Document, i: number) => {
         console.log(`Creating embedding for chunk ${i + 1}/${docs.length}`);
         const embedding = await embeddings.embedQuery(doc.pageContent);
+        const vectorId = `${fileId}-${i}`;
+        console.log(`Vector ID: ${vectorId}`);
         return {
-          id: `${fileId}-${i}`,
+          id: vectorId,
           values: embedding,
           metadata: {
             text: doc.pageContent,
-            fileId,
+            fileId: fileId,
             chunkIndex: i,
+            totalChunks: docs.length,
           },
         };
       })
@@ -104,6 +106,27 @@ export async function upsertDocument(fileId: string, content: string) {
     // Upsert to Pinecone
     await index.upsert(vectors);
     console.log('Successfully upserted vectors to Pinecone');
+
+    // Verify the vectors were stored
+    const verifyResponse = await index.query({
+      vector: new Array(1536).fill(0),
+      topK: 1,
+      filter: {
+        fileId: { $eq: fileId },
+      },
+      includeMetadata: true,
+    });
+
+    console.log('\n=== Storage Verification ===');
+    console.log('Vectors found for fileId:', verifyResponse.matches?.length || 0);
+    if (verifyResponse.matches?.[0]) {
+      console.log('First vector metadata:', {
+        id: verifyResponse.matches[0].id,
+        fileId: verifyResponse.matches[0].metadata?.fileId,
+        chunkIndex: verifyResponse.matches[0].metadata?.chunkIndex,
+        totalChunks: verifyResponse.matches[0].metadata?.totalChunks,
+      });
+    }
 
     console.log('\n=== Document Processing Summary ===');
     console.log('Total chunks processed:', vectors.length);
@@ -218,14 +241,24 @@ export async function queryPinecone(query: string, fileId: string, topK: number 
 
     const index = pinecone.index(process.env.PINECONE_INDEX_NAME!);
     
+    // Get index stats first
+    const stats = await index.describeIndexStats();
+    console.log('\nIndex Stats:', {
+      totalRecords: stats.totalRecordCount,
+      dimension: stats.dimension,
+      namespaces: stats.namespaces
+    });
+    
     // Create query embedding
+    console.log('\nCreating query embedding...');
     const queryEmbedding = await embeddings.embedQuery(query);
     console.log('Query embedding created, dimension:', queryEmbedding.length);
     
-    // Query Pinecone with a larger topK to get more candidates for reranking
+    // First try with fileId filter
+    console.log('\nQuerying Pinecone with fileId filter...');
     const queryResponse = await index.query({
       vector: queryEmbedding,
-      topK: Math.max(topK * 2, 10), // Get more candidates for reranking
+      topK: Math.max(topK * 2, 10),
       filter: {
         fileId: { $eq: fileId },
       },
@@ -233,45 +266,49 @@ export async function queryPinecone(query: string, fileId: string, topK: number 
     });
 
     console.log('\n=== Pinecone Query Results ===');
-    console.log('Total matches found:', queryResponse.matches?.length || 0);
+    console.log('Total matches found with fileId filter:', queryResponse.matches?.length || 0);
     
-    if (queryResponse.matches && queryResponse.matches.length > 0) {
-      console.log('\nMatch Details:');
-      queryResponse.matches.forEach((match, index) => {
-        console.log(`\nMatch ${index + 1}:`);
-        console.log('Score:', match.score);
-        console.log('Text length:', match.metadata?.text?.length || 0);
-        console.log('Text preview:', match.metadata?.text?.substring(0, 200) + '...');
-        console.log('Chunk Index:', match.metadata?.chunkIndex);
+    let matches = queryResponse.matches || [];
+    
+    // If no matches found with fileId filter, try without it
+    if (matches.length === 0) {
+      console.log('\nNo matches found with fileId filter, trying without filter...');
+      const unfilteredResponse = await index.query({
+        vector: queryEmbedding,
+        topK: Math.max(topK * 2, 10),
+        includeMetadata: true,
       });
-
-      // Calculate score statistics
-      const scores = queryResponse.matches.map(m => m.score || 0);
-      const avgScore = scores.reduce((a, b) => a + b, 0) / scores.length;
-      const maxScore = Math.max(...scores);
-      const minScore = Math.min(...scores);
-      console.log('\nScore Statistics:');
-      console.log('Average score:', avgScore);
-      console.log('Max score:', maxScore);
-      console.log('Min score:', minScore);
-    } else {
-      console.log('No matches found in Pinecone');
+      
+      console.log('Total matches found without filter:', unfilteredResponse.matches?.length || 0);
+      matches = unfilteredResponse.matches || [];
+      
+      // Log all matches to help debug
+      if (matches.length > 0) {
+        console.log('\nAll matches found:');
+        matches.forEach((match, index) => {
+          console.log(`\nMatch ${index + 1}:`);
+          console.log('ID:', match.id);
+          console.log('Score:', match.score);
+          console.log('FileId in metadata:', match.metadata?.fileId);
+          console.log('Chunk Index:', match.metadata?.chunkIndex);
+        });
+      }
     }
 
     // Extract the matched documents
-    const chunks = queryResponse.matches
-      ?.filter(match => match.score && match.score > 0.3)
+    const chunks = matches
+      .filter(match => match.score && match.score > 0.3)
       .map((match: any) => match.metadata?.text) || [];
 
     console.log('\n=== Chunk Filtering Results ===');
-    console.log('Total chunks before filtering:', queryResponse.matches?.length || 0);
+    console.log('Total chunks before filtering:', matches.length);
     console.log('Chunks after score filtering (>0.3):', chunks.length);
     console.log('Total text length in filtered chunks:', chunks.reduce((acc, chunk) => acc + (chunk?.length || 0), 0));
 
     if (chunks.length === 0) {
       console.log('\nNo relevant chunks found with score > 0.3');
       // Try a more lenient search without score filtering
-      const lenientChunks = queryResponse.matches?.map((match: any) => match.metadata?.text) || [];
+      const lenientChunks = matches.map((match: any) => match.metadata?.text) || [];
       console.log('All chunks found (without score filtering):', {
         numChunks: lenientChunks.length,
         totalLength: lenientChunks.reduce((acc, chunk) => acc + (chunk?.length || 0), 0),

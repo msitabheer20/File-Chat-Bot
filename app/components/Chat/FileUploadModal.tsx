@@ -8,6 +8,7 @@ interface FileUploadModalProps {
   files: FileData[];
   onFileUpload: (files: FileList | null) => void;
   onFileRemove: (fileId: string) => void;
+  isPdfLibLoading: boolean;
 }
 
 export default function FileUploadModal({
@@ -16,6 +17,7 @@ export default function FileUploadModal({
   files,
   onFileUpload,
   onFileRemove,
+  isPdfLibLoading,
 }: FileUploadModalProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<FileList | null>(null);
@@ -114,36 +116,44 @@ export default function FileUploadModal({
           </button>
         </div>
 
-        <div
-          className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
-            isDragging ? 'border-indigo-500 bg-indigo-50' : 'border-gray-300 hover:border-indigo-400'
-          }`}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-        >
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={handleFileSelect}
-            className="hidden"
-            multiple
-            accept=".pdf,.txt"
-          />
-          <Upload className="h-12 w-12 mx-auto text-indigo-400 mb-4" />
-          <p className="text-gray-600 mb-2">
-            Drag and drop files here, or click to select files
-          </p>
-          <p className="text-sm text-gray-500">
-            Supported formats: PDF, TXT (Max size: 5MB)
-          </p>
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-sm"
+        {isPdfLibLoading ? (
+          <div className="flex flex-col items-center justify-center p-8">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mb-4"></div>
+            <p className="text-gray-600">Loading PDF support...</p>
+            <p className="text-sm text-gray-500 mt-2">Please wait while we initialize the PDF reader.</p>
+          </div>
+        ) : (
+          <div
+            className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
+              isDragging ? 'border-indigo-500 bg-indigo-50' : 'border-gray-300 hover:border-indigo-400'
+            }`}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
           >
-            Select Files
-          </button>
-        </div>
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileSelect}
+              className="hidden"
+              multiple
+              accept=".pdf,.txt"
+            />
+            <Upload className="h-12 w-12 mx-auto text-indigo-400 mb-4" />
+            <p className="text-gray-600 mb-2">
+              Drag and drop files here, or click to select files
+            </p>
+            <p className="text-sm text-gray-500">
+              Supported formats: PDF, TXT (Max size: 5MB)
+            </p>
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-sm"
+            >
+              Select Files
+            </button>
+          </div>
+        )}
 
         {(hasSelectedFiles || hasUploadedFiles) && (
           <div className="mt-6">

@@ -1,7 +1,6 @@
 "use client"
 import { useState, useRef, useEffect } from 'react';
 import { Message, FileData } from '@/types/chat';
-import Script from 'next/script';
 import { Trash2, FileIcon, Plus } from 'lucide-react';
 import FileUploadModal from './FileUploadModal';
 
@@ -20,6 +19,7 @@ export default function ChatInterface() {
   const [processingStatus, setProcessingStatus] = useState<string>('');
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const [isPdfLibLoaded, setIsPdfLibLoaded] = useState(false);
+  const [isPdfLibLoading, setIsPdfLibLoading] = useState(true);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
 
   const processPdfFile = async (file: File): Promise<string> => {
@@ -126,9 +126,20 @@ export default function ChatInterface() {
         setFiles(prev => [...prev, fileData]);
 
         if (file.type === 'application/pdf') {
-          if (!isPdfLibLoaded) {
-            throw new Error('PDF.js library is still loading. Please try again in a moment.');
+          // Wait for PDF.js to be loaded
+          let attempts = 0;
+          const maxAttempts = 10;
+          while (!isPdfLibLoaded && attempts < maxAttempts) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+            attempts++;
+            console.log(`Waiting for PDF.js to load... Attempt ${attempts}/${maxAttempts}`);
           }
+
+          if (!isPdfLibLoaded) {
+            throw new Error('PDF.js library failed to load. Please refresh the page and try again.');
+          }
+
+          console.log('PDF.js library loaded, processing file...');
           const content = await processPdfFile(file);
           if (!content.trim()) {
             throw new Error('No text content could be extracted from the PDF. The file might be image-based or have security restrictions.');
@@ -202,7 +213,7 @@ export default function ChatInterface() {
         {
           id: Date.now().toString(),
           role: 'system',
-          content: 'Error uploading file. Please try again.',
+          content: `Error uploading file: ${error instanceof Error ? error.message : 'Unknown error'}`,
           timestamp: Date.now(),
         },
       ]);
@@ -359,22 +370,67 @@ export default function ChatInterface() {
     setupPinecone();
   }, []);
 
-  return (
-    <div className="flex flex-col h-[80vh] max-w-4xl mx-auto p-4 bg-white rounded-lg shadow-lg">
-      <Script
-        src="//cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"
-        onLoad={() => {
+  // Add useEffect for PDF.js initialization
+  useEffect(() => {
+    const initPdfJs = async () => {
+      try {
+        setIsPdfLibLoading(true);
+        // Load PDF.js script
+        const script = document.createElement('script');
+        script.src = '//cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+        script.async = true;
+        
+        script.onload = () => {
+          // Set up the worker
           window.pdfjsLib.GlobalWorkerOptions.workerSrc = '//cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
           setIsPdfLibLoaded(true);
-        }}
-      />
+          setIsPdfLibLoading(false);
+          console.log('PDF.js library loaded successfully');
+        };
+
+        script.onerror = (error) => {
+          console.error('Error loading PDF.js:', error);
+          setIsPdfLibLoading(false);
+          setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            role: 'system',
+            content: 'Error loading PDF.js library. Please refresh the page.',
+            timestamp: Date.now(),
+          }]);
+        };
+
+        document.head.appendChild(script);
+      } catch (error) {
+        console.error('Error initializing PDF.js:', error);
+        setIsPdfLibLoading(false);
+        setMessages(prev => [...prev, {
+          id: Date.now().toString(),
+          role: 'system',
+          content: 'Error initializing PDF.js library. Please refresh the page.',
+          timestamp: Date.now(),
+        }]);
+      }
+    };
+
+    initPdfJs();
+  }, []);
+
+  return (
+    <div className="flex flex-col h-[80vh] max-w-4xl mx-auto p-4 bg-white rounded-lg shadow-lg">
       <div 
         ref={chatContainerRef}
         className="flex-1 overflow-y-auto space-y-4 p-4 border border-gray-300 rounded-lg mb-4 bg-gray-50 shadow-sm"
       >
         {messages.length === 0 && (
           <div className="text-center text-gray-600">
-            Click the plus icon to upload a document and ask questions about its content.
+            {isPdfLibLoading ? (
+              <div className="flex items-center justify-center space-x-2">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-indigo-600"></div>
+                <span>Loading PDF support...</span>
+              </div>
+            ) : (
+              'Click the plus icon to upload a document and ask questions about its content.'
+            )}
           </div>
         )}
         {messages.map((message) => (
@@ -414,6 +470,7 @@ export default function ChatInterface() {
             onClick={() => setIsUploadModalOpen(true)}
             className="p-2 hover:bg-indigo-50 rounded-full transition-colors text-indigo-600"
             title="Upload files"
+            disabled={isPdfLibLoading}
           >
             <Plus className="h-5 w-5" />
           </button>
@@ -441,6 +498,7 @@ export default function ChatInterface() {
         files={files}
         onFileUpload={handleFileUpload}
         onFileRemove={handleRemoveFile}
+        isPdfLibLoading={isPdfLibLoading}
       />
     </div>
   );
