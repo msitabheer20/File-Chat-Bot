@@ -18,6 +18,8 @@ const pinecone = new Pinecone({
   apiKey: process.env.PINECONE_API_KEY,
 });
 
+export { pinecone };
+
 const embeddings = new OpenAIEmbeddings({
   openAIApiKey: process.env.OPENAI_API_KEY,
 });
@@ -209,7 +211,7 @@ async function rerankChunks(query: string, chunks: string[], topK: number = 5) {
 
 export async function queryPinecone(query: string, fileId: string, topK: number = 5) {
   try {
-    console.log('=== Pinecone Query Details ===');
+    console.log('\n=== Pinecone Query Details ===');
     console.log('Query:', query);
     console.log('File ID:', fileId);
     console.log('Top K:', topK);
@@ -238,9 +240,20 @@ export async function queryPinecone(query: string, fileId: string, topK: number 
       queryResponse.matches.forEach((match, index) => {
         console.log(`\nMatch ${index + 1}:`);
         console.log('Score:', match.score);
-        console.log('Text Preview:', match.metadata?.text?.substring(0, 200) + '...');
+        console.log('Text length:', match.metadata?.text?.length || 0);
+        console.log('Text preview:', match.metadata?.text?.substring(0, 200) + '...');
         console.log('Chunk Index:', match.metadata?.chunkIndex);
       });
+
+      // Calculate score statistics
+      const scores = queryResponse.matches.map(m => m.score || 0);
+      const avgScore = scores.reduce((a, b) => a + b, 0) / scores.length;
+      const maxScore = Math.max(...scores);
+      const minScore = Math.min(...scores);
+      console.log('\nScore Statistics:');
+      console.log('Average score:', avgScore);
+      console.log('Max score:', maxScore);
+      console.log('Min score:', minScore);
     } else {
       console.log('No matches found in Pinecone');
     }
@@ -250,13 +263,19 @@ export async function queryPinecone(query: string, fileId: string, topK: number 
       ?.filter(match => match.score && match.score > 0.3)
       .map((match: any) => match.metadata?.text) || [];
 
+    console.log('\n=== Chunk Filtering Results ===');
+    console.log('Total chunks before filtering:', queryResponse.matches?.length || 0);
+    console.log('Chunks after score filtering (>0.3):', chunks.length);
+    console.log('Total text length in filtered chunks:', chunks.reduce((acc, chunk) => acc + (chunk?.length || 0), 0));
+
     if (chunks.length === 0) {
       console.log('\nNo relevant chunks found with score > 0.3');
       // Try a more lenient search without score filtering
       const lenientChunks = queryResponse.matches?.map((match: any) => match.metadata?.text) || [];
       console.log('All chunks found (without score filtering):', {
         numChunks: lenientChunks.length,
-        totalLength: lenientChunks.reduce((acc, chunk) => acc + chunk.length, 0)
+        totalLength: lenientChunks.reduce((acc, chunk) => acc + (chunk?.length || 0), 0),
+        averageLength: Math.round(lenientChunks.reduce((acc, chunk) => acc + (chunk?.length || 0), 0) / lenientChunks.length)
       });
       return lenientChunks;
     }

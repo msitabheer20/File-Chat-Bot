@@ -28,38 +28,54 @@ export default function ChatInterface() {
     }
 
     try {
-      console.log('Starting PDF processing for:', file.name);
+      console.log('\n=== PDF Processing Details ===');
+      console.log('File name:', file.name);
+      console.log('File size:', file.size);
+      
       const arrayBuffer = await file.arrayBuffer();
       console.log('ArrayBuffer created, size:', arrayBuffer.byteLength);
       
       const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-      console.log('PDF loaded, pages:', pdf.numPages);
+      console.log('PDF loaded, total pages:', pdf.numPages);
       
       let fullText = '';
       let hasText = false;
+      let totalTextLength = 0;
+      let pagesWithText = 0;
 
       for (let i = 1; i <= pdf.numPages; i++) {
-        console.log(`Processing page ${i}/${pdf.numPages}`);
+        console.log(`\nProcessing page ${i}/${pdf.numPages}`);
         const page = await pdf.getPage(i);
         const textContent = await page.getTextContent();
         const pageText = textContent.items
           .map((item: any) => item.str)
           .join(' ');
         
+        console.log(`Page ${i} text length:`, pageText.length);
+        console.log(`Page ${i} text preview:`, pageText.substring(0, 100) + '...');
+        
         if (pageText.trim().length > 0) {
           hasText = true;
           fullText += pageText + '\n';
-          console.log(`Page ${i} text length:`, pageText.length);
+          totalTextLength += pageText.length;
+          pagesWithText++;
+          console.log(`Page ${i} contains text (${pageText.length} characters)`);
         } else {
           console.log(`Page ${i} contains no extractable text`);
         }
       }
 
+      console.log('\n=== PDF Processing Summary ===');
+      console.log('Total pages processed:', pdf.numPages);
+      console.log('Pages with text:', pagesWithText);
+      console.log('Total text length:', totalTextLength);
+      console.log('Average text per page:', Math.round(totalTextLength / pagesWithText));
+      console.log('Full text preview:', fullText.substring(0, 200) + '...');
+
       if (!hasText) {
         throw new Error('This PDF appears to be image-based or contains no extractable text. Please ensure the PDF contains actual text content.');
       }
 
-      console.log('Total extracted text length:', fullText.length);
       return fullText;
     } catch (error) {
       console.error('Error processing PDF:', error);
