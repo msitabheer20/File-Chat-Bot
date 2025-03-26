@@ -132,7 +132,7 @@ export default function ChatInterface() {
           while (!isPdfLibLoaded && attempts < maxAttempts) {
             await new Promise(resolve => setTimeout(resolve, 500));
             attempts++;
-            console.log(`Waiting for PDF.js to load... Attempt ${attempts}/${maxAttempts}`);
+            // console.log(`Waiting for PDF.js to load... Attempt ${attempts}/${maxAttempts}`);
           }
 
           if (!isPdfLibLoaded) {
