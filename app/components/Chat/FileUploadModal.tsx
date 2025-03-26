@@ -105,12 +105,12 @@ export default function FileUploadModal({
 
   return (
     <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 w-full max-w-2xl shadow-xl">
+      <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-2xl shadow-xl">
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-semibold text-gray-800">Upload Files</h2>
+          <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200">Upload Files</h2>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-gray-50 rounded-full text-gray-500 hover:text-gray-700 transition-colors"
+            className="p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-full text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
           >
             <X className="h-5 w-5" />
           </button>
@@ -118,14 +118,16 @@ export default function FileUploadModal({
 
         {isPdfLibLoading ? (
           <div className="flex flex-col items-center justify-center p-8">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mb-4"></div>
-            <p className="text-gray-600">Loading PDF support...</p>
-            <p className="text-sm text-gray-500 mt-2">Please wait while we initialize the PDF reader.</p>
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 dark:border-indigo-400 mb-4"></div>
+            <p className="text-gray-600 dark:text-gray-300">Loading PDF support...</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">Please wait while we initialize the PDF reader.</p>
           </div>
         ) : (
           <div
             className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
-              isDragging ? 'border-indigo-500 bg-indigo-50' : 'border-gray-300 hover:border-indigo-400'
+              isDragging 
+                ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20' 
+                : 'border-gray-300 dark:border-gray-600 hover:border-indigo-400 dark:hover:border-indigo-500'
             }`}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
@@ -139,11 +141,11 @@ export default function FileUploadModal({
               multiple
               accept=".pdf,.txt"
             />
-            <Upload className="h-12 w-12 mx-auto text-indigo-400 mb-4" />
-            <p className="text-gray-600 mb-2">
+            <Upload className="h-12 w-12 mx-auto text-indigo-400 dark:text-indigo-300 mb-4" />
+            <p className="text-gray-600 dark:text-gray-300 mb-2">
               Drag and drop files here, or click to select files
             </p>
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-gray-500 dark:text-gray-400">
               Supported formats: PDF, TXT (Max size: 5MB)
             </p>
             <button
@@ -157,39 +159,39 @@ export default function FileUploadModal({
 
         {(hasSelectedFiles || hasUploadedFiles) && (
           <div className="mt-6">
-            <h3 className="text-sm font-medium text-gray-700 mb-2">
+            <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               {hasSelectedFiles ? 'Selected Files:' : 'Uploaded Files:'}
             </h3>
             <div className="space-y-2">
               {hasSelectedFiles ? (
                 Array.from(selectedFiles!).map((file) => (
-                  <div key={file.name} className="flex items-center justify-between bg-gray-50 p-2 rounded border border-gray-100">
+                  <div key={file.name} className="flex items-center justify-between bg-gray-50 dark:bg-gray-700 p-2 rounded border border-gray-100 dark:border-gray-600">
                     <div className="flex items-center space-x-2">
-                      <FileIcon className="h-4 w-4 text-indigo-500" />
-                      <span className="text-sm text-gray-700">{file.name}</span>
+                      <FileIcon className="h-4 w-4 text-indigo-500 dark:text-indigo-400" />
+                      <span className="text-sm text-gray-700 dark:text-gray-300">{file.name}</span>
                     </div>
                     <button
                       onClick={() => handleRemoveSelectedFile(file.name)}
-                      className="p-1 hover:bg-gray-100 rounded-full transition-colors"
+                      className="p-1 hover:bg-gray-100 dark:hover:bg-gray-600 rounded-full transition-colors"
                       title="Remove file"
                     >
-                      <Trash2 className="h-4 w-4 text-gray-500 hover:text-red-500" />
+                      <Trash2 className="h-4 w-4 text-gray-500 dark:text-gray-400 hover:text-red-500 dark:hover:text-red-400" />
                     </button>
                   </div>
                 ))
               ) : (
                 files.map((file) => (
-                  <div key={file.id} className="flex items-center justify-between bg-gray-50 p-2 rounded border border-gray-100">
+                  <div key={file.id} className="flex items-center justify-between bg-gray-50 dark:bg-gray-700 p-2 rounded border border-gray-100 dark:border-gray-600">
                     <div className="flex items-center space-x-2">
-                      <FileIcon className="h-4 w-4 text-indigo-500" />
-                      <span className="text-sm text-gray-700">{file.name}</span>
+                      <FileIcon className="h-4 w-4 text-indigo-500 dark:text-indigo-400" />
+                      <span className="text-sm text-gray-700 dark:text-gray-300">{file.name}</span>
                     </div>
                     <button
                       onClick={() => handleRemoveFile(file.id)}
-                      className="p-1 hover:bg-gray-100 rounded-full transition-colors"
+                      className="p-1 hover:bg-gray-100 dark:hover:bg-gray-600 rounded-full transition-colors"
                       title="Remove file"
                     >
-                      <Trash2 className="h-4 w-4 text-gray-500 hover:text-red-500" />
+                      <Trash2 className="h-4 w-4 text-gray-500 dark:text-gray-400 hover:text-red-500 dark:hover:text-red-400" />
                     </button>
                   </div>
                 ))

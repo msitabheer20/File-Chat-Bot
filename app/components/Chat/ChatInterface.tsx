@@ -1,8 +1,9 @@
 "use client"
 import { useState, useRef, useEffect } from 'react';
 import { Message, FileData } from '@/types/chat';
-import { Trash2, FileIcon, Plus } from 'lucide-react';
+import { Trash2, FileIcon, Plus, Sun, Moon } from 'lucide-react';
 import FileUploadModal from './FileUploadModal';
+import { useTheme } from '@/contexts/ThemeContext';
 
 declare global {
   interface Window {
@@ -21,6 +22,7 @@ export default function ChatInterface() {
   const [isPdfLibLoaded, setIsPdfLibLoaded] = useState(false);
   const [isPdfLibLoading, setIsPdfLibLoading] = useState(true);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const { theme, setTheme, toggleTheme } = useTheme();
 
   const processPdfFile = async (file: File): Promise<string> => {
     if (!window.pdfjsLib) {
@@ -270,15 +272,41 @@ export default function ChatInterface() {
 
       const data = await response.json();
       console.log('Success response data:', data);
-      setMessages(prev => [
-        ...prev,
-        {
-          id: Date.now().toString(),
-          role: 'assistant',
-          content: data.content,
-          timestamp: Date.now(),
-        },
-      ]);
+      
+      // Check if the response includes a function call
+      if (data.functionCall && data.functionCall.name === 'setTheme') {
+        // Handle theme change function
+        const { theme: newTheme } = data.functionCall.arguments;
+        setTheme(newTheme);
+        
+        // Add message about the theme change
+        setMessages(prev => [
+          ...prev,
+          {
+            id: Date.now().toString(),
+            role: 'assistant',
+            content: data.content,
+            timestamp: Date.now(),
+          },
+          {
+            id: (Date.now() + 1).toString(),
+            role: 'system',
+            content: `Theme changed to ${newTheme} mode.`,
+            timestamp: Date.now() + 1,
+          },
+        ]);
+      } else {
+        // Normal message
+        setMessages(prev => [
+          ...prev,
+          {
+            id: Date.now().toString(),
+            role: 'assistant',
+            content: data.content,
+            timestamp: Date.now(),
+          },
+        ]);
+      }
     } catch (error) {
       console.error('Full error details:', error);
       setMessages(prev => [
@@ -416,16 +444,31 @@ export default function ChatInterface() {
   }, []);
 
   return (
-    <div className="flex flex-col h-[80vh] max-w-4xl mx-auto p-4 bg-white rounded-lg shadow-lg">
+    <div className="flex flex-col h-[80vh] max-w-4xl mx-auto p-4 bg-white dark:bg-gray-800 rounded-lg shadow-lg">
+      {/* Theme toggle button */}
+      <div className="flex justify-end mb-2">
+        <button
+          onClick={toggleTheme}
+          className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+          aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
+        >
+          {theme === 'light' ? (
+            <Moon className="h-5 w-5 text-gray-700" />
+          ) : (
+            <Sun className="h-5 w-5 text-gray-300" />
+          )}
+        </button>
+      </div>
+
       <div 
         ref={chatContainerRef}
-        className="flex-1 overflow-y-auto space-y-4 p-4 border border-gray-300 rounded-lg mb-4 bg-gray-50 shadow-sm"
+        className="flex-1 overflow-y-auto space-y-4 p-4 border border-gray-300 rounded-lg mb-4 bg-gray-50 dark:bg-gray-900 dark:border-gray-700 shadow-sm"
       >
         {messages.length === 0 && (
-          <div className="text-center text-gray-600">
+          <div className="text-center text-gray-600 dark:text-gray-400">
             {isPdfLibLoading ? (
               <div className="flex items-center justify-center space-x-2">
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-indigo-600"></div>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-indigo-600 dark:border-indigo-400"></div>
                 <span>Loading PDF support...</span>
               </div>
             ) : (
@@ -444,7 +487,9 @@ export default function ChatInterface() {
               className={`max-w-[80%] rounded-lg p-3 shadow-sm ${
                 message.role === 'user'
                   ? 'bg-indigo-600 text-white'
-                  : 'bg-white text-gray-800 border border-gray-200'
+                  : message.role === 'system'
+                  ? 'bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600'
+                  : 'bg-white text-gray-800 dark:bg-gray-800 dark:text-gray-200 border border-gray-200 dark:border-gray-700'
               }`}
             >
               <p className="whitespace-pre-wrap">{message.content}</p>
@@ -456,19 +501,19 @@ export default function ChatInterface() {
         ))}
         {isLoading && (
           <div className="flex justify-start">
-            <div className="bg-white text-gray-800 rounded-lg p-3 border border-gray-200 shadow-sm">
+            <div className="bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 rounded-lg p-3 border border-gray-200 dark:border-gray-700 shadow-sm">
               Thinking...
             </div>
           </div>
         )}
       </div>
 
-      <div className="border-t border-gray-200 p-4 bg-white shadow-sm rounded-lg">
+      <div className="border-t border-gray-200 dark:border-gray-700 p-4 bg-white dark:bg-gray-800 shadow-sm rounded-lg">
         <form onSubmit={handleSubmit} className="flex items-center space-x-2">
           <button
             type="button"
             onClick={() => setIsUploadModalOpen(true)}
-            className="p-2 hover:bg-indigo-50 rounded-full transition-colors text-indigo-600"
+            className="p-2 hover:bg-indigo-50 dark:hover:bg-indigo-900 rounded-full transition-colors text-indigo-600 dark:text-indigo-400"
             title="Upload files"
             disabled={isPdfLibLoading}
           >
@@ -479,7 +524,7 @@ export default function ChatInterface() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Type your message..."
-            className="flex-1 p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent placeholder:text-gray-500 bg-white text-gray-900"
+            className="flex-1 p-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent placeholder:text-gray-500 dark:placeholder:text-gray-400 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
             disabled={isProcessing}
           />
           <button

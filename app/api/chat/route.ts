@@ -26,6 +26,25 @@ function splitIntoChunks(text: string, maxChunkSize: number = 8000): string[] {
   return chunks;
 }
 
+// Define the available functions
+const availableFunctions = {
+  setTheme: {
+    name: "setTheme",
+    description: "Set the theme of the application to light or dark mode",
+    parameters: {
+      type: "object",
+      properties: {
+        theme: {
+          type: "string",
+          enum: ["light", "dark"],
+          description: "The theme to set for the application",
+        },
+      },
+      required: ["theme"],
+    },
+  },
+};
+
 export async function POST(req: Request) {
   try {
     const { message, files } = await req.json();
@@ -95,27 +114,33 @@ export async function POST(req: Request) {
         2. Ask about specific topics or sections they're interested in
         3. Share what they're looking for, and you can help guide them to the right questions
         
-        Be friendly and encouraging in your response.`;
+        Be friendly and encouraging in your response.
+        
+        You also have the ability to control the theme of the application. If the user asks to change the theme (light/dark), use the setTheme function.`;
       } else {
         systemPrompt = `You are a helpful AI assistant that answers questions based on the provided document context. 
         Use the following context to answer the user's question. If the context doesn't contain enough information to answer the question, 
         say so. Do not make up information that isn't in the context. Be specific and cite relevant parts of the context in your answer.
 
-        Context: ${context}`;
+        Context: ${context}
+        
+        You also have the ability to control the theme of the application. If the user asks to change the theme (light/dark), use the setTheme function.`;
       }
     } else {
       console.log('\n=== Processing Basic Chat ===');
       console.log('Message:', message);
       // Basic chat without documents
       systemPrompt = `You are a helpful AI assistant. Provide clear, concise, and accurate answers to the user's questions. 
-      If you're not sure about something, say so. Be friendly and professional in your responses.`;
+      If you're not sure about something, say so. Be friendly and professional in your responses.
+      
+      You also have the ability to control the theme of the application. If the user asks to change the theme (light/dark), use the setTheme function.`;
     }
 
     console.log('\n=== System Prompt ===');
     console.log('Prompt length:', systemPrompt.length);
     console.log('Prompt preview:', systemPrompt.substring(0, 200) + '...');
 
-    // Get response from OpenAI
+    // Get response from OpenAI with function calling
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o',
       messages: [
@@ -124,14 +149,49 @@ export async function POST(req: Request) {
       ],
       temperature: 0.7,
       max_tokens: 500,
+      tools: [
+        {
+          type: "function",
+          function: availableFunctions.setTheme,
+        },
+      ],
+      tool_choice: "auto",
     });
 
+    const responseMessage = completion.choices[0].message;
+    
+    // Check if the model wants to call a function
+    const toolCalls = responseMessage.tool_calls;
+    if (toolCalls) {
+      console.log('\n=== Function Call Detected ===');
+      
+      const functionResponses = [];
+      
+      for (const toolCall of toolCalls) {
+        if (toolCall.type === 'function' && toolCall.function.name === 'setTheme') {
+          const functionArgs = JSON.parse(toolCall.function.arguments);
+          const theme = functionArgs.theme;
+          
+          console.log(`Function call: setTheme(${theme})`);
+          
+          // Return with function call information
+          return NextResponse.json({
+            content: responseMessage.content || "I'll change the theme for you.",
+            functionCall: {
+              name: 'setTheme',
+              arguments: { theme }
+            }
+          });
+        }
+      }
+    }
+
     console.log('\n=== OpenAI Response ===');
-    console.log('Response length:', completion.choices[0].message.content?.length);
-    console.log('Response preview:', completion.choices[0].message.content?.substring(0, 200) + '...');
+    console.log('Response length:', responseMessage.content?.length);
+    console.log('Response preview:', responseMessage.content?.substring(0, 200) + '...');
 
     return NextResponse.json({
-      content: completion.choices[0].message.content,
+      content: responseMessage.content,
     });
   } catch (error) {
     console.error('Error in chat API:', error);
