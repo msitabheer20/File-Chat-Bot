@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { FileData } from '@/types/chat';
 import { queryPinecone, verifyDocumentStorage } from '@/utils/pinecone';
+import { getSlackLunchStatus } from '@/utils/slack';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -42,6 +43,32 @@ const availableFunctions = {
       },
       required: ["theme"],
     },
+  },
+  getSlackLunchStatus: {
+    name: "getSlackLunchStatus",
+    description: "Get the lunch status from Slack for a specific channel",
+    parameters: {
+      type: "object",
+      properties: {
+        channelName: {
+          type: "string",
+          description: "The name of the Slack channel to check (without the # symbol)"
+        },
+        timeframe: {
+          type: "string",
+          enum: ["today", "yesterday", "this_week"],
+          description: "The timeframe to check for lunch status messages (default: today)"
+        }
+      },
+      required: ["channelName"]
+    },
+    examples: [
+      {
+        channelName: "general",
+        timeframe: "today"
+      }
+    ],
+    additionalInformation: "This function checks if users in the specified Slack channel have posted #lunchstart and #lunchend messages. For lunch end, both #lunchend and #lunchover tags are recognized as equivalent."
   },
 };
 
@@ -116,7 +143,9 @@ export async function POST(req: Request) {
         
         Be friendly and encouraging in your response.
         
-        You also have the ability to control the theme of the application. If the user asks to change the theme (light/dark), use the setTheme function.`;
+        You also have the ability to control the theme of the application. If the user asks to change the theme (light/dark), use the setTheme function.
+        
+        If the user asks about Slack lunch status tracking, use the getSlackLunchStatus function to help them.`;
       } else {
         systemPrompt = `You are a helpful AI assistant that answers questions based on the provided document context. 
         Use the following context to answer the user's question. If the context doesn't contain enough information to answer the question, 
@@ -124,7 +153,9 @@ export async function POST(req: Request) {
 
         Context: ${context}
         
-        You also have the ability to control the theme of the application. If the user asks to change the theme (light/dark), use the setTheme function.`;
+        You also have the ability to control the theme of the application. If the user asks to change the theme (light/dark), use the setTheme function.
+        
+        If the user asks about Slack lunch status tracking, use the getSlackLunchStatus function to help them.`;
       }
     } else {
       console.log('\n=== Processing Basic Chat ===');
@@ -133,7 +164,9 @@ export async function POST(req: Request) {
       systemPrompt = `You are a helpful AI assistant. Provide clear, concise, and accurate answers to the user's questions. 
       If you're not sure about something, say so. Be friendly and professional in your responses.
       
-      You also have the ability to control the theme of the application. If the user asks to change the theme (light/dark), use the setTheme function.`;
+      You also have the ability to control the theme of the application. If the user asks to change the theme (light/dark), use the setTheme function.
+      
+      If the user asks about Slack lunch status tracking, use the getSlackLunchStatus function to help them.`;
     }
 
     console.log('\n=== System Prompt ===');
@@ -154,6 +187,10 @@ export async function POST(req: Request) {
           type: "function",
           function: availableFunctions.setTheme,
         },
+        {
+          type: "function",
+          function: availableFunctions.getSlackLunchStatus,
+        },
       ],
       tool_choice: "auto",
     });
@@ -164,8 +201,6 @@ export async function POST(req: Request) {
     const toolCalls = responseMessage.tool_calls;
     if (toolCalls) {
       console.log('\n=== Function Call Detected ===');
-      
-      const functionResponses = [];
       
       for (const toolCall of toolCalls) {
         if (toolCall.type === 'function' && toolCall.function.name === 'setTheme') {
@@ -182,6 +217,61 @@ export async function POST(req: Request) {
               arguments: { theme }
             }
           });
+        }
+        else if (toolCall.type === 'function' && toolCall.function.name === 'getSlackLunchStatus') {
+          const functionArgs = JSON.parse(toolCall.function.arguments);
+          const channelName = functionArgs.channelName;
+          const timeframe = functionArgs.timeframe || 'today';
+          
+          console.log(`Function call: getSlackLunchStatus(${channelName}, ${timeframe})`);
+          
+          try {
+            // Check if Slack token is set
+            if (!process.env.SLACK_BOT_TOKEN) {
+              return NextResponse.json({
+                content: `I was unable to check the lunch status for #${channelName}. The Slack bot token is not configured.`,
+                error: 'SLACK_BOT_TOKEN is not set in environment variables'
+              });
+            }
+            
+            // Get actual data from the Slack utility (currently returns mock data)
+            const slackData = await getSlackLunchStatus(
+              channelName, 
+              timeframe as "today" | "yesterday" | "this_week"
+            );
+            
+            // Return with function call information - Only use the formatted message, not the model's content
+            return NextResponse.json({
+              content: null, // No formatted content, just raw data
+              functionCall: {
+                name: 'getSlackLunchStatus',
+                arguments: { channelName, timeframe },
+                result: slackData
+              }
+            });
+          } catch (error) {
+            console.error('Error getting Slack lunch status:', error);
+            
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error with Slack integration';
+            let detailedMessage = `I was unable to retrieve the lunch status information for #${channelName}. There might be an issue with the Slack integration.`;
+            
+            // Provide more helpful messages based on error type
+            if (errorMessage.includes('missing_scope') || errorMessage.includes('Missing Slack permission')) {
+              detailedMessage = `I'm unable to check lunch status because the Slack bot needs additional permissions. Please ask an administrator to update the Slack app's permissions to include: channels:read, channels:history, and users:read scopes.`;
+            } else if (errorMessage.includes('not found')) {
+              detailedMessage = `I couldn't find a channel named #${channelName}. Please check that the channel exists and I have been added to the workspace.`;
+            } else if (errorMessage.includes('not a member')) {
+              detailedMessage = `I'm not a member of the #${channelName} channel. Please invite me to the channel by typing "@YourBotName" in the channel, then try again.`;
+            } else if (errorMessage.includes('token_revoked') || errorMessage.includes('invalid_auth')) {
+              detailedMessage = `There's an authentication issue with the Slack integration. Please ask an administrator to check the Slack token configuration.`;
+            }
+            
+            // Return error message
+            return NextResponse.json({
+              content: detailedMessage,
+              error: errorMessage
+            });
+          }
         }
       }
     }

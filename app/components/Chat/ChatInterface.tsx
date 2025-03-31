@@ -1,14 +1,32 @@
 "use client"
 import { useState, useRef, useEffect } from 'react';
 import { Message, FileData } from '@/types/chat';
-import { Trash2, FileIcon, Plus, Sun, Moon } from 'lucide-react';
+import { Trash2, FileIcon, Plus, Sun, Moon, Users, Settings } from 'lucide-react';
 import FileUploadModal from './FileUploadModal';
 import { useTheme } from '@/contexts/ThemeContext';
+import Link from 'next/link';
 
 declare global {
   interface Window {
     pdfjsLib: any;
   }
+}
+
+// For the Slack lunch status visualization
+interface SlackUser {
+  name: string;
+  id: string;
+  status: string;
+  lunchStartTime?: string;
+  lunchEndTime?: string;
+}
+
+interface SlackLunchReport {
+  channel: string;
+  timeframe: string;
+  users: SlackUser[];
+  total: number;
+  timestamp: string;
 }
 
 export default function ChatInterface() {
@@ -33,13 +51,13 @@ export default function ChatInterface() {
       console.log('\n=== PDF Processing Details ===');
       console.log('File name:', file.name);
       console.log('File size:', file.size);
-      
+
       const arrayBuffer = await file.arrayBuffer();
       console.log('ArrayBuffer created, size:', arrayBuffer.byteLength);
-      
+
       const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
       console.log('PDF loaded, total pages:', pdf.numPages);
-      
+
       let fullText = '';
       let hasText = false;
       let totalTextLength = 0;
@@ -52,10 +70,10 @@ export default function ChatInterface() {
         const pageText = textContent.items
           .map((item: any) => item.str)
           .join(' ');
-        
+
         console.log(`Page ${i} text length:`, pageText.length);
         console.log(`Page ${i} text preview:`, pageText.substring(0, 100) + '...');
-        
+
         if (pageText.trim().length > 0) {
           hasText = true;
           fullText += pageText + '\n';
@@ -272,29 +290,199 @@ export default function ChatInterface() {
 
       const data = await response.json();
       console.log('Success response data:', data);
-      
+
       // Check if the response includes a function call
-      if (data.functionCall && data.functionCall.name === 'setTheme') {
-        // Handle theme change function
-        const { theme: newTheme } = data.functionCall.arguments;
-        setTheme(newTheme);
-        
-        // Add message about the theme change
-        setMessages(prev => [
-          ...prev,
-          {
-            id: Date.now().toString(),
-            role: 'assistant',
-            content: data.content,
-            timestamp: Date.now(),
-          },
-          {
-            id: (Date.now() + 1).toString(),
-            role: 'system',
-            content: `Theme changed to ${newTheme} mode.`,
-            timestamp: Date.now() + 1,
-          },
-        ]);
+      if (data.functionCall) {
+        if (data.functionCall.name === 'setTheme') {
+          // Handle theme change function
+          const { theme: newTheme } = data.functionCall.arguments;
+          setTheme(newTheme);
+
+          // Add message about the theme change
+          setMessages(prev => [
+            ...prev,
+            {
+              id: Date.now().toString(),
+              role: 'assistant',
+              content: data.content,
+              timestamp: Date.now(),
+            },
+            {
+              id: (Date.now() + 1).toString(),
+              role: 'system',
+              content: `Theme changed to ${newTheme} mode.`,
+              timestamp: Date.now() + 1,
+            },
+          ]);
+        }
+        else if (data.functionCall.name === 'getSlackLunchStatus') {
+          // Handle Slack lunch status function
+          const { channelName, timeframe } = data.functionCall.arguments;
+          const result = data.functionCall.result as SlackLunchReport;
+          
+          // Add assistant message with the lunch status table
+          setMessages(prev => [
+            ...prev,
+            {
+              id: Date.now().toString(),
+              role: 'assistant',
+              content: '',
+              timestamp: Date.now(),
+              customContent: (
+                <div className="w-full overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
+                  {/* Header */}
+                  <div className="bg-white dark:bg-gray-800 px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                      Lunch Status for #{result.channel} ({result.timeframe})
+                    </h3>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200">
+                        Total users: {result.users.filter(user => user.name !== "checkbot").length}
+                      </span>
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        result.total > 0 
+                          ? 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200' 
+                          : 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200'
+                      }`}>
+                        Missing tags: {result.users.filter(user => user.name !== "checkbot" && user.status !== "complete").length}
+                      </span>
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200">
+                        Generated: {new Date(result.timestamp).toLocaleTimeString()}
+                      </span>
+                    </div>
+                  </div>
+                  
+                  {/* Table */}
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                      <thead className="bg-gray-50 dark:bg-gray-900">
+                        <tr>
+                          <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">User</th>
+                          <th scope="col" className="hidden sm:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">ID</th>
+                          <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</th>
+                          <th scope="col" className="hidden sm:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Lunch Start</th>
+                          <th scope="col" className="hidden sm:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Lunch End</th>
+                          <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Duration</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                        {/* Sort users - incomplete first, then complete */}
+                        {[...result.users]
+                          // Filter out users with name "checkbot"
+                          .filter(user => user.name !== "checkbot")
+                          .sort((a, b) => {
+                          if (a.status !== "complete" && b.status === "complete") return -1;
+                          if (a.status === "complete" && b.status !== "complete") return 1;
+                          return a.name.localeCompare(b.name);
+                        }).map((user, index) => {
+                          // Calculate time gap if both timestamps exist
+                          let timeGap = null;
+                          let isLongBreak = false;
+                          
+                          if (user.lunchStartTime && user.lunchEndTime) {
+                            const startTime = new Date(user.lunchStartTime).getTime();
+                            const endTime = new Date(user.lunchEndTime).getTime();
+                            const diffInMinutes = Math.round((endTime - startTime) / (1000 * 60));
+                            timeGap = diffInMinutes;
+                            isLongBreak = diffInMinutes > 30;
+                          }
+                          
+                          // Set status style based on status
+                          let statusBgClass = '';
+                          let statusTextClass = '';
+                          
+                          if (user.status === "complete") {
+                            statusBgClass = 'bg-green-100 dark:bg-green-900';
+                            statusTextClass = 'text-green-800 dark:text-green-200';
+                          } else if (user.status === "missing both tags") {
+                            statusBgClass = 'bg-red-100 dark:bg-red-900';
+                            statusTextClass = 'text-red-800 dark:text-red-200';
+                          } else if (user.status === "missing #lunchstart") {
+                            statusBgClass = 'bg-yellow-100 dark:bg-yellow-900';
+                            statusTextClass = 'text-yellow-800 dark:text-yellow-200';
+                          } else {
+                            statusBgClass = 'bg-orange-100 dark:bg-orange-900';
+                            statusTextClass = 'text-orange-800 dark:text-orange-200';
+                          }
+
+                          // Display text for lunchend status to include lunchover
+                          const displayStatus = user.status === "missing #lunchend" 
+                            ? "missing #lunchend/lunchover" 
+                            : user.status;
+                          
+                          // Format timestamps
+                          const startTime = user.lunchStartTime 
+                            ? new Date(user.lunchStartTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) 
+                            : '-';
+                          
+                          const endTime = user.lunchEndTime 
+                            ? new Date(user.lunchEndTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) 
+                            : '-';
+                          
+                          // Row background color for alternating rows
+                          const rowBgClass = index % 2 === 0 ? 'bg-gray-50 dark:bg-gray-900/50' : 'bg-white dark:bg-gray-800';
+                          
+                          return (
+                            <tr key={user.id} className={rowBgClass}>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-200">
+                                {user.name}
+                                {/* Show times on mobile */}
+                                {(user.lunchStartTime || user.lunchEndTime) && (
+                                  <div className="sm:hidden mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                    {user.lunchStartTime && <div>Start: {startTime}</div>}
+                                    {user.lunchEndTime && <div>End: {endTime}</div>}
+                                  </div>
+                                )}
+                              </td>
+                              <td className="hidden sm:table-cell px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 font-mono text-xs">
+                                {user.id}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusBgClass} ${statusTextClass}`}>
+                                  {displayStatus}
+                                </span>
+                              </td>
+                              <td className="hidden sm:table-cell px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                                {startTime}
+                              </td>
+                              <td className="hidden sm:table-cell px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                                {endTime}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                {timeGap !== null ? (
+                                  <span className={isLongBreak 
+                                    ? 'text-red-600 dark:text-red-400 font-medium' 
+                                    : 'text-green-600 dark:text-green-400'
+                                  }>
+                                    {timeGap} min {isLongBreak ? '⚠️' : '✅'}
+                                  </span>
+                                ) : (
+                                  '-'
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )
+            }
+          ]);
+        }
+        else {
+          // Unknown function call
+          setMessages(prev => [
+            ...prev,
+            {
+              id: Date.now().toString(),
+              role: 'assistant',
+              content: data.content,
+              timestamp: Date.now(),
+            },
+          ]);
+        }
       } else {
         // Normal message
         setMessages(prev => [
@@ -340,7 +528,7 @@ export default function ChatInterface() {
 
       // Remove file from local state
       setFiles(prevFiles => prevFiles.filter(file => file.id !== fileId));
-      
+
       // Add system message about file removal
       setMessages(prev => [
         ...prev,
@@ -379,7 +567,7 @@ export default function ChatInterface() {
           method: 'POST',
         });
         const data = await response.json();
-        
+
         if (!response.ok) {
           throw new Error(data.details || data.error || 'Failed to setup Pinecone index');
         }
@@ -407,7 +595,7 @@ export default function ChatInterface() {
         const script = document.createElement('script');
         script.src = '//cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
         script.async = true;
-        
+
         script.onload = () => {
           // Set up the worker
           window.pdfjsLib.GlobalWorkerOptions.workerSrc = '//cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
@@ -446,7 +634,14 @@ export default function ChatInterface() {
   return (
     <div className="flex flex-col h-[80vh] max-w-4xl mx-auto p-4 bg-white dark:bg-gray-800 rounded-lg shadow-lg">
       {/* Theme toggle button */}
-      <div className="flex justify-end mb-2">
+      <div className="flex justify-end mb-2 space-x-2">
+        <Link
+          href="/admin"
+          className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+          aria-label="Admin Dashboard"
+        >
+          <Settings className="h-5 w-5 text-gray-700 dark:text-gray-300" />
+        </Link>
         <button
           onClick={toggleTheme}
           className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
@@ -460,7 +655,7 @@ export default function ChatInterface() {
         </button>
       </div>
 
-      <div 
+      <div
         ref={chatContainerRef}
         className="flex-1 overflow-y-auto space-y-4 p-4 border border-gray-300 rounded-lg mb-4 bg-gray-50 dark:bg-gray-900 dark:border-gray-700 shadow-sm"
       >
@@ -479,20 +674,22 @@ export default function ChatInterface() {
         {messages.map((message) => (
           <div
             key={message.id}
-            className={`flex ${
-              message.role === 'user' ? 'justify-end' : 'justify-start'
-            }`}
+            className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'
+              }`}
           >
             <div
-              className={`max-w-[80%] rounded-lg p-3 shadow-sm ${
-                message.role === 'user'
-                  ? 'bg-indigo-600 text-white'
-                  : message.role === 'system'
+              className={`${message.customContent ? 'w-full max-w-full' : 'max-w-[80%]'} rounded-lg p-3 shadow-sm ${message.role === 'user'
+                ? 'bg-indigo-600 text-white'
+                : message.role === 'system'
                   ? 'bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600'
                   : 'bg-white text-gray-800 dark:bg-gray-800 dark:text-gray-200 border border-gray-200 dark:border-gray-700'
-              }`}
+                }`}
             >
-              <p className="whitespace-pre-wrap">{message.content}</p>
+              {message.customContent ? (
+                <div className="custom-content">{message.customContent}</div>
+              ) : (
+                <p className="" dangerouslySetInnerHTML={{ __html: message.content }} />
+              )}
               <span className="text-xs opacity-70 mt-1 block">
                 {new Date(message.timestamp).toLocaleTimeString()}
               </span>
