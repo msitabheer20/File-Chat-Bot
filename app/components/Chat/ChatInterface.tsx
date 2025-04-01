@@ -261,9 +261,9 @@ export default function ChatInterface() {
     setIsLoading(true);
 
     try {
-      console.log('Starting chat request...');
-      console.log('Files state:', files);
-      console.log('User message:', userMessage);
+      // console.log('Starting chat request...');
+      // console.log('Files state:', files);
+      // console.log('User message:', userMessage);
 
       const response = await fetch('/api/chat', {
         method: 'POST',
@@ -279,8 +279,8 @@ export default function ChatInterface() {
         }),
       });
 
-      console.log('Response status:', response.status);
-      console.log('Response headers:', Object.fromEntries(response.headers.entries()));
+      // console.log('Response status:', response.status);
+      // console.log('Response headers:', Object.fromEntries(response.headers.entries()));
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => null);
@@ -289,7 +289,7 @@ export default function ChatInterface() {
       }
 
       const data = await response.json();
-      console.log('Success response data:', data);
+      // console.log('Success response data:', data);
 
       // Check if the response includes a function call
       if (data.functionCall) {
@@ -317,7 +317,6 @@ export default function ChatInterface() {
         }
         else if (data.functionCall.name === 'getSlackLunchStatus') {
           // Handle Slack lunch status function
-          const { channelName, timeframe } = data.functionCall.arguments;
           const result = data.functionCall.result as SlackLunchReport;
           
           // Add assistant message with the lunch status table
@@ -472,7 +471,6 @@ export default function ChatInterface() {
           ]);
         }
         else {
-          // Unknown function call
           setMessages(prev => [
             ...prev,
             {
