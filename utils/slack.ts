@@ -22,6 +22,40 @@ interface SlackLunchReport {
   timestamp: string;
 }
 
+// For update status tracking
+export interface UpdateStatus {
+  name: string;
+  id: string;
+  hasPosted: boolean;
+  timestamp?: string;
+  content?: string;
+  allUpdates?: Array<{ timestamp: string; content: string }>;
+}
+
+export interface SlackUpdateReport {
+  channel: string;
+  timeframe: "today" | "yesterday" | "this_week";
+  users: UpdateStatus[];
+  timestamp: string;
+}
+
+// For report status tracking
+export interface ReportStatus {
+  name: string;
+  id: string;
+  hasPosted: boolean;
+  timestamp?: string;
+  content?: string;
+  allReports?: Array<{ timestamp: string; content: string }>;
+}
+
+export interface SlackReportStatusReport {
+  channel: string;
+  timeframe: "today" | "yesterday" | "this_week";
+  users: ReportStatus[];
+  timestamp: string;
+}
+
 interface SlackApiResponse {
   ok: boolean;
   error?: string;
@@ -163,7 +197,7 @@ export async function getSlackLunchStatus(
   }
 }
 
-async function findChannelId(channelName: string): Promise<string | null> {
+export async function findChannelId(channelName: string): Promise<string | null> {
   try {
     console.log(`Searching for channel with name: ${channelName}`);
 
@@ -407,5 +441,223 @@ function getTimeframeStart(timeframe: "today" | "yesterday" | "this_week"): numb
       now.setDate(diff);
       now.setHours(0, 0, 0, 0);
       return now.getTime();
+  }
+}
+
+/**
+ * Get all update messages for a user
+ * @param userId The Slack user ID
+ * @param channelId The Slack channel ID
+ * @param since Timestamp to check from (in ms)
+ * @returns Array of objects with timestamp and content
+ */
+async function getUserUpdateTag(
+  userId: string,
+  channelId: string,
+  since: number
+): Promise<Array<{ timestamp: string; content: string }>> {
+  try {
+    const sinceTimestamp = Math.floor(since / 1000); // Convert to seconds for Slack API
+    
+    const response = await fetchSlackApi('conversations.history', {
+      channel: channelId,
+      oldest: sinceTimestamp.toString(),
+      limit: 1000
+    });
+    
+    if (!response.ok) {
+      if (response.error === 'missing_scope') {
+        console.error('PERMISSION ERROR: The Slack bot token is missing required scopes.');
+        console.error('Required scope: channels:history');
+        console.error('Please add this scope to your Slack app in the Slack API dashboard.');
+        throw new Error(`Missing Slack permission scope. The bot needs the 'channels:history' scope to read messages.`);
+      }
+      throw new Error(`Failed to fetch channel history: ${response.error}`);
+    }
+    
+    // Filter messages from this user only that contain #update
+    const updateMessages = response.messages.filter((msg: any) => 
+      msg.user === userId && 
+      msg.text && 
+      msg.text.toLowerCase().includes('#update')
+    );
+    
+    // Sort messages by timestamp (newest first)
+    updateMessages.sort((a: any, b: any) => parseFloat(b.ts) - parseFloat(a.ts));
+    
+    // Process all update messages
+    return updateMessages.map((message: any) => {
+      const timestamp = new Date(parseInt(message.ts) * 1000).toISOString();
+      
+      // Extract the content after #update
+      let content = message.text;
+      const updateIndex = content.toLowerCase().indexOf('#update');
+      if (updateIndex >= 0) {
+        content = content.substring(updateIndex + '#update'.length).trim();
+      }
+      
+      return { timestamp, content };
+    });
+  } catch (error) {
+    console.error(`Error getting update tags for user ${userId}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Get update status for all users in a channel
+ */
+export async function getSlackUpdateStatus(
+  channelName: string = 'general',
+  timeframe: "today" | "yesterday" | "this_week" = "today"
+): Promise<SlackUpdateReport> {
+  try {
+    const channelId = await findChannelId(channelName);
+    if (!channelId) {
+      throw new Error(`Channel "${channelName}" not found. Please check the channel name.`);
+    }
+
+    // Get timestamp based on timeframe
+    const since = getTimeframeStart(timeframe);
+    console.log(`Getting update status since: ${new Date(since).toISOString()}`);
+
+    // Get all users in the channel
+    const users = await getChannelUsers(channelId);
+    console.log(`Found ${users.length} users in channel`);
+
+    // For each user, check if they've posted an update today
+    const userPromises = users.map(async (user) => {
+      const updateInfo = await getUserUpdateTag(user.id, channelId, since);
+      
+      return {
+        id: user.id,
+        name: user.name,
+        hasPosted: updateInfo.length > 0,
+        timestamp: updateInfo.length > 0 ? updateInfo[0].timestamp : undefined,
+        content: updateInfo.length > 0 ? updateInfo[0].content : undefined,
+        allUpdates: updateInfo.length > 0 ? updateInfo : undefined
+      };
+    });
+
+    const userStatuses = await Promise.all(userPromises);
+
+    return {
+      channel: channelName,
+      timeframe,
+      users: userStatuses,
+      timestamp: new Date().toISOString()
+    };
+  } catch (error) {
+    console.error('Error in getSlackUpdateStatus:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get all report messages for a user
+ * @param userId The Slack user ID
+ * @param channelId The Slack channel ID
+ * @param since Timestamp to check from (in ms)
+ * @returns Array of objects with timestamp and content
+ */
+async function getUserReportTag(
+  userId: string,
+  channelId: string,
+  since: number
+): Promise<Array<{ timestamp: string; content: string }>> {
+  try {
+    const sinceTimestamp = Math.floor(since / 1000); // Convert to seconds for Slack API
+    
+    const response = await fetchSlackApi('conversations.history', {
+      channel: channelId,
+      oldest: sinceTimestamp.toString(),
+      limit: 1000
+    });
+    
+    if (!response.ok) {
+      if (response.error === 'missing_scope') {
+        console.error('PERMISSION ERROR: The Slack bot token is missing required scopes.');
+        console.error('Required scope: channels:history');
+        console.error('Please add this scope to your Slack app in the Slack API dashboard.');
+        throw new Error(`Missing Slack permission scope. The bot needs the 'channels:history' scope to read messages.`);
+      }
+      throw new Error(`Failed to fetch channel history: ${response.error}`);
+    }
+    
+    // Filter messages from this user only that contain #report
+    const reportMessages = response.messages.filter((msg: any) => 
+      msg.user === userId && 
+      msg.text && 
+      msg.text.toLowerCase().includes('#report')
+    );
+    
+    // Sort messages by timestamp (newest first)
+    reportMessages.sort((a: any, b: any) => parseFloat(b.ts) - parseFloat(a.ts));
+    
+    // Process all report messages
+    return reportMessages.map((message: any) => {
+      const timestamp = new Date(parseInt(message.ts) * 1000).toISOString();
+      
+      // Extract the content after #report
+      let content = message.text;
+      const reportIndex = content.toLowerCase().indexOf('#report');
+      if (reportIndex >= 0) {
+        content = content.substring(reportIndex + '#report'.length).trim();
+      }
+      
+      return { timestamp, content };
+    });
+  } catch (error) {
+    console.error(`Error getting report tags for user ${userId}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Get report status for all users in a channel
+ */
+export async function getSlackReportStatus(
+  channelName: string = 'general',
+  timeframe: "today" | "yesterday" | "this_week" = "today"
+): Promise<SlackReportStatusReport> {
+  try {
+    const channelId = await findChannelId(channelName);
+    if (!channelId) {
+      throw new Error(`Channel "${channelName}" not found. Please check the channel name.`);
+    }
+
+    // Get timestamp based on timeframe
+    const since = getTimeframeStart(timeframe);
+    console.log(`Getting report status since: ${new Date(since).toISOString()}`);
+
+    // Get all users in the channel
+    const users = await getChannelUsers(channelId);
+    console.log(`Found ${users.length} users in channel`);
+
+    // For each user, check if they've posted a report in the timeframe
+    const userPromises = users.map(async (user) => {
+      const reportTag = await getUserReportTag(user.id, channelId, since);
+      
+      return {
+        id: user.id,
+        name: user.name,
+        hasPosted: reportTag.length > 0,
+        timestamp: reportTag.length > 0 ? reportTag[0].timestamp : undefined,
+        content: reportTag.length > 0 ? reportTag[0].content : undefined,
+        allReports: reportTag.length > 0 ? reportTag : undefined
+      };
+    });
+
+    const userStatuses = await Promise.all(userPromises);
+
+    return {
+      channel: channelName,
+      timeframe,
+      users: userStatuses,
+      timestamp: new Date().toISOString()
+    };
+  } catch (error) {
+    console.error('Error in getSlackReportStatus:', error);
+    throw error;
   }
 }

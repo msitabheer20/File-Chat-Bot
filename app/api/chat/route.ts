@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { FileData } from '@/types/chat';
 import { queryPinecone, verifyDocumentStorage } from '@/utils/pinecone';
-import { getSlackLunchStatus } from '@/utils/slack';
+import { getSlackLunchStatus, getSlackUpdateStatus, getSlackReportStatus } from '@/utils/slack';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -69,6 +69,58 @@ const availableFunctions = {
       }
     ],
     additionalInformation: "This function checks if users in the specified Slack channel have posted #lunchstart and #lunchend messages. For lunch end, both #lunchend and #lunchover tags are recognized as equivalent."
+  },
+  getSlackUpdateStatus: {
+    name: "getSlackUpdateStatus",
+    description: "Get a list of users in a Slack channel who have posted #update messages with their content",
+    parameters: {
+      type: "object",
+      properties: {
+        channelName: {
+          type: "string",
+          description: "The name of the Slack channel to check (without the # symbol)"
+        },
+        timeframe: {
+          type: "string",
+          enum: ["today", "yesterday", "this_week"],
+          description: "The timeframe to check for update messages (default: today)"
+        }
+      },
+      required: ["channelName"]
+    },
+    examples: [
+      {
+        channelName: "general",
+        timeframe: "today"
+      }
+    ],
+    additionalInformation: "This function checks if users in the specified Slack channel have posted #update messages and returns the content of those messages."
+  },
+  getSlackReportStatus: {
+    name: "getSlackReportStatus",
+    description: "Get a list of users in a Slack channel who have posted #report messages with their content",
+    parameters: {
+      type: "object",
+      properties: {
+        channelName: {
+          type: "string",
+          description: "The name of the Slack channel to check (without the # symbol)"
+        },
+        timeframe: {
+          type: "string",
+          enum: ["today", "yesterday", "this_week"],
+          description: "The timeframe to check for report messages (default: today)"
+        }
+      },
+      required: ["channelName"]
+    },
+    examples: [
+      {
+        channelName: "general",
+        timeframe: "today"
+      }
+    ],
+    additionalInformation: "This function checks if users in the specified Slack channel have posted #report messages and returns the content of those reports."
   },
 };
 
@@ -145,7 +197,13 @@ export async function POST(req: Request) {
         
         You also have the ability to control the theme of the application. If the user asks to change the theme (light/dark), use the setTheme function.
         
-        If the user asks about Slack lunch status tracking, use the getSlackLunchStatus function to help them.`;
+        If the user asks about Slack lunch status tracking, use the getSlackLunchStatus function to help them.
+        
+        If the user asks about Slack update status tracking, use the getSlackUpdateStatus function to help them.
+        
+        If the user asks about Slack report status tracking, use the getSlackReportStatus function to help them.
+        `;
+
       } else {
         systemPrompt = `You are a helpful AI assistant that answers questions based on the provided document context. 
         Use the following context to answer the user's question. If the context doesn't contain enough information to answer the question, 
@@ -155,7 +213,11 @@ export async function POST(req: Request) {
         
         You also have the ability to control the theme of the application. If the user asks to change the theme (light/dark), use the setTheme function.
         
-        If the user asks about Slack lunch status tracking, use the getSlackLunchStatus function to help them.`;
+        If the user asks about Slack lunch status tracking, use the getSlackLunchStatus function to help them.
+        
+        If the user asks about Slack update status tracking, use the getSlackUpdateStatus function to help them.
+        
+        If the user asks about Slack report status tracking, use the getSlackReportStatus function to help them.`;
       }
     } else {
       console.log('\n=== Processing Basic Chat ===');
@@ -166,7 +228,11 @@ export async function POST(req: Request) {
       
       You also have the ability to control the theme of the application. If the user asks to change the theme (light/dark), use the setTheme function.
       
-      If the user asks about Slack lunch status tracking, use the getSlackLunchStatus function to help them.`;
+      If the user asks about Slack lunch status tracking, use the getSlackLunchStatus function to help them.
+      
+      If the user asks about Slack update status tracking, use the getSlackUpdateStatus function to help them.
+      
+      If the user asks about Slack report status tracking, use the getSlackReportStatus function to help them.`;
     }
 
     console.log('\n=== System Prompt ===');
@@ -190,6 +256,14 @@ export async function POST(req: Request) {
         {
           type: "function",
           function: availableFunctions.getSlackLunchStatus,
+        },
+        {
+          type: "function",
+          function: availableFunctions.getSlackUpdateStatus,
+        },
+        {
+          type: "function",
+          function: availableFunctions.getSlackReportStatus,
         },
       ],
       tool_choice: "auto",
@@ -234,7 +308,7 @@ export async function POST(req: Request) {
               });
             }
             
-            // Get actual data from the Slack utility (currently returns mock data)
+            // Get actual data from the Slack utility
             const slackData = await getSlackLunchStatus(
               channelName, 
               timeframe as "today" | "yesterday" | "this_week"
@@ -249,27 +323,95 @@ export async function POST(req: Request) {
                 result: slackData
               }
             });
+            
           } catch (error) {
-            console.error('Error getting Slack lunch status:', error);
+            console.error('Error in getSlackLunchStatus function call:', error);
             
-            const errorMessage = error instanceof Error ? error.message : 'Unknown error with Slack integration';
-            let detailedMessage = `I was unable to retrieve the lunch status information for #${channelName}. There might be an issue with the Slack integration.`;
-            
-            // Provide more helpful messages based on error type
-            if (errorMessage.includes('missing_scope') || errorMessage.includes('Missing Slack permission')) {
-              detailedMessage = `I'm unable to check lunch status because the Slack bot needs additional permissions. Please ask an administrator to update the Slack app's permissions to include: channels:read, channels:history, and users:read scopes.`;
-            } else if (errorMessage.includes('not found')) {
-              detailedMessage = `I couldn't find a channel named #${channelName}. Please check that the channel exists and I have been added to the workspace.`;
-            } else if (errorMessage.includes('not a member')) {
-              detailedMessage = `I'm not a member of the #${channelName} channel. Please invite me to the channel by typing "@YourBotName" in the channel, then try again.`;
-            } else if (errorMessage.includes('token_revoked') || errorMessage.includes('invalid_auth')) {
-              detailedMessage = `There's an authentication issue with the Slack integration. Please ask an administrator to check the Slack token configuration.`;
+            return NextResponse.json({
+              content: `I encountered an error checking lunch status for #${channelName}: ${error instanceof Error ? error.message : 'Unknown error'}`,
+              error: error instanceof Error ? error.message : 'Unknown error'
+            });
+          }
+        }
+        else if (toolCall.type === 'function' && toolCall.function.name === 'getSlackUpdateStatus') {
+          const functionArgs = JSON.parse(toolCall.function.arguments);
+          const channelName = functionArgs.channelName;
+          const timeframe = functionArgs.timeframe || 'today';
+          
+          console.log(`Function call: getSlackUpdateStatus(${channelName}, ${timeframe})`);
+          
+          try {
+            // Check if Slack token is set
+            if (!process.env.SLACK_BOT_TOKEN) {
+              return NextResponse.json({
+                content: `I was unable to check the update status for #${channelName}. The Slack bot token is not configured.`,
+                error: 'SLACK_BOT_TOKEN is not set in environment variables'
+              });
             }
             
-            // Return error message
+            // Get actual data from the Slack utility
+            const slackData = await getSlackUpdateStatus(
+              channelName, 
+              timeframe as "today" | "yesterday" | "this_week"
+            );
+            
+            // Return with function call information
             return NextResponse.json({
-              content: detailedMessage,
-              error: errorMessage
+              content: null, // No formatted content, just raw data
+              functionCall: {
+                name: 'getSlackUpdateStatus',
+                arguments: { channelName, timeframe },
+                result: slackData
+              }
+            });
+            
+          } catch (error) {
+            console.error('Error in getSlackUpdateStatus function call:', error);
+            
+            return NextResponse.json({
+              content: `I encountered an error checking update status for #${channelName}: ${error instanceof Error ? error.message : 'Unknown error'}`,
+              error: error instanceof Error ? error.message : 'Unknown error'
+            });
+          }
+        }
+        else if (toolCall.type === 'function' && toolCall.function.name === 'getSlackReportStatus') {
+          const functionArgs = JSON.parse(toolCall.function.arguments);
+          const channelName = functionArgs.channelName;
+          const timeframe = functionArgs.timeframe || 'today';
+          
+          console.log(`Function call: getSlackReportStatus(${channelName}, ${timeframe})`);
+          
+          try {
+            // Check if Slack token is set
+            if (!process.env.SLACK_BOT_TOKEN) {
+              return NextResponse.json({
+                content: `I was unable to check the report status for #${channelName}. The Slack bot token is not configured.`,
+                error: 'SLACK_BOT_TOKEN is not set in environment variables'
+              });
+            }
+            
+            // Get actual data from the Slack utility
+            const slackData = await getSlackReportStatus(
+              channelName, 
+              timeframe as "today" | "yesterday" | "this_week"
+            );
+            
+            // Return with function call information
+            return NextResponse.json({
+              content: null, // No formatted content, just raw data
+              functionCall: {
+                name: 'getSlackReportStatus',
+                arguments: { channelName, timeframe },
+                result: slackData
+              }
+            });
+            
+          } catch (error) {
+            console.error('Error in getSlackReportStatus function call:', error);
+            
+            return NextResponse.json({
+              content: `I encountered an error checking report status for #${channelName}: ${error instanceof Error ? error.message : 'Unknown error'}`,
+              error: error instanceof Error ? error.message : 'Unknown error'
             });
           }
         }

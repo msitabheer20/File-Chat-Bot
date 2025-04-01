@@ -1,63 +1,76 @@
-import { NextResponse } from 'next/server';
-import { getSlackLunchStatus } from '@/utils/slack';
+import { NextRequest, NextResponse } from 'next/server';
+import { findChannelId, getSlackLunchStatus, getSlackUpdateStatus, getSlackReportStatus } from '@/utils/slack';
 
-export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const channelName = searchParams.get('channel') || 'general';
-  const timeframe = (searchParams.get('timeframe') as "today" | "yesterday" | "this_week") || 'today';
-  
-  // Check if Slack token is configured
+export async function GET(request: NextRequest) {
   if (!process.env.SLACK_BOT_TOKEN) {
-    return NextResponse.json(
-      { 
-        error: 'Slack bot token not configured', 
-        diagnostic: 'The SLACK_BOT_TOKEN environment variable is not set. Please add it to your .env.local file.' 
-      }, 
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'SLACK_BOT_TOKEN is not set in environment variables' }, { status: 500 });
   }
+
+  const searchParams = request.nextUrl.searchParams;
+  const mode = searchParams.get('mode') || 'lunch';
+  const channelName = searchParams.get('channel') || 'general';
+  const timeframe = searchParams.get('timeframe') || 'today';
   
+  console.log(`Testing Slack function mode=${mode} for channel=${channelName}, timeframe=${timeframe}`);
+
   try {
-    console.log(`Testing Slack lunch status for channel: #${channelName} with timeframe: ${timeframe}`);
-    
-    // Use the Slack utility function
-    const slackData = await getSlackLunchStatus(channelName, timeframe);
-    
-    // Return all data in the response
-    return NextResponse.json({
-      success: true,
-      message: `Successfully fetched lunch status for #${channelName}`,
-      data: slackData
-    });
+    let result;
+
+    if (mode === 'lunch') {
+      // Test the lunch status function
+      result = await getSlackLunchStatus(
+        channelName, 
+        timeframe as "today" | "yesterday" | "this_week"
+      );
+      console.log('Lunch status result:', JSON.stringify(result, null, 2));
+    } 
+    else if (mode === 'update') {
+      // Test the update status function
+      result = await getSlackUpdateStatus(
+        channelName, 
+        timeframe as "today" | "yesterday" | "this_week"
+      );
+      console.log('Update status result:', JSON.stringify(result, null, 2));
+    }
+    else if (mode === 'report') {
+      // Test the report status function
+      result = await getSlackReportStatus(
+        channelName, 
+        timeframe as "today" | "yesterday" | "this_week"
+      );
+      console.log('Report status result:', JSON.stringify(result, null, 2));
+    }
+    else if (mode === 'channel') {
+      // Just find the channel ID
+      const channelId = await findChannelId(channelName);
+      console.log(`Channel ID for #${channelName}:`, channelId);
+      result = { channelName, channelId };
+    }
+    else {
+      return NextResponse.json({ error: 'Invalid mode. Use "lunch", "update", "report", or "channel".' }, { status: 400 });
+    }
+
+    return NextResponse.json(result);
   } catch (error) {
-    console.error('Error testing Slack lunch status:', error);
+    console.error('Error testing Slack function:', error);
     
-    // Prepare diagnostic information
-    let diagnostic = 'An unexpected error occurred.';
-    let statusCode = 500;
-    const errorMessage = error instanceof Error ? error.message : String(error);
+    // Prepare a detailed error message depending on the error type
+    let errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    let status = 500;
     
-    // Handle known error types with specific messages
-    if (errorMessage.includes('Channel not found')) {
-      diagnostic = `The channel #${channelName} could not be found. Verify that:
-                   1. The channel exists (check for typos)
-                   2. Your bot has been invited to this channel
-                   3. Your bot has the 'channels:read' permission`;
-      statusCode = 404;
-    } else if (errorMessage.includes('Bot is not a member')) {
-      diagnostic = `Your bot is not a member of channel #${channelName}. Please add the bot to this channel:
-                   1. Go to #${channelName} in Slack
-                   2. Type @YourBotName to invite it
-                   3. Verify it shows up in the channel members list`;
-      statusCode = 403;
-    } else if (errorMessage.includes('Missing Slack permission scope')) {
-      diagnostic = 'Your Slack bot token is missing required permissions. Please check the permissions guide below.';
-      statusCode = 401;
+    if (errorMessage.includes('missing_scope') || errorMessage.includes('Missing Slack permission')) {
+      errorMessage = `Missing required Slack permissions. The bot needs channels:read, channels:history, and users:read scopes.`;
+    } else if (errorMessage.includes('not found')) {
+      errorMessage = `Channel #${channelName} was not found. Please check that the channel exists.`;
+      status = 404;
+    } else if (errorMessage.includes('not a member')) {
+      errorMessage = `The bot is not a member of #${channelName}. Please invite the bot to the channel by typing "@YourBotName" in the channel.`;
+      status = 403;
+    } else if (errorMessage.includes('token_revoked') || errorMessage.includes('invalid_auth')) {
+      errorMessage = `Authentication error. Please check the Slack token configuration.`;
+      status = 401;
     }
     
-    return NextResponse.json(
-      { error: errorMessage, diagnostic }, 
-      { status: statusCode }
-    );
+    return NextResponse.json({ error: errorMessage }, { status });
   }
 } 
